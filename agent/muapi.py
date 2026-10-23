@@ -75,3 +75,23 @@ class MuapiClient:
     def download(url, path):
         with urllib.request.urlopen(url, timeout=120) as resp, open(path, "wb") as out:
             out.write(resp.read())
+
+
+def sniff_format(path):
+    """Return the real container format of a downloaded file: 'png', 'jpeg', 'gif', 'webp', 'avif', 'mp4' or None."""
+    with open(path, "rb") as f:
+        head = f.read(16)
+    if head.startswith(b"\x89PNG"):
+        return "png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpeg"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"avif", b"avis"):
+            return "avif"
+        return "mp4"
+    return None

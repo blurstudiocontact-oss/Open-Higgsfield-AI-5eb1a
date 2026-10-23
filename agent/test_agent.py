@@ -5,8 +5,18 @@ import unittest
 from unittest import mock
 
 from agent import run
-from agent.muapi import MuapiClient, MuapiError
+from agent.muapi import MuapiClient, MuapiError, sniff_format
 from agent.planner import parse_plan
+
+def fake_download(url, path):
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + b"0" * 8)
+
+
+def _write(path, data):
+    with open(path, "wb") as f:
+        f.write(data)
+
 
 GOOD_PLAN = {
     "shots": [
@@ -77,6 +87,35 @@ class PlanParsingTests(unittest.TestCase):
             parse_plan("no plan here", max_shots=3)
 
 
+class ImageFormatTests(unittest.TestCase):
+    def _sniff(self, header):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(header)
+        try:
+            return sniff_format(f.name)
+        finally:
+            os.remove(f.name)
+
+    def test_recognises_common_formats(self):
+        self.assertEqual(self._sniff(b"\x89PNG\r\n\x1a\n" + b"0" * 8), "png")
+        self.assertEqual(self._sniff(b"\xff\xd8\xff\xe0" + b"0" * 12), "jpeg")
+        self.assertEqual(self._sniff(b"RIFF" + b"0000" + b"WEBP"), "webp")
+
+    def test_recognises_avif_and_mp4(self):
+        self.assertEqual(self._sniff(b"\x00\x00\x00\x1cftypavif" + b"0" * 4), "avif")
+        self.assertEqual(self._sniff(b"\x00\x00\x00\x18ftypmp42"), "mp4")
+
+    def test_avif_is_converted_to_png(self):
+        client = mock.Mock()
+        client.download.side_effect = lambda url, path: _write(path, b"\x00\x00\x00\x1cftypavif0000")
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("agent.run.shutil.which", return_value="/usr/bin/ffmpeg"), \
+             mock.patch("agent.run.subprocess.run") as run_ffmpeg:
+            path = run.save_image(client, "https://cdn.example/a.avif", os.path.join(tmp, "s1"))
+        self.assertTrue(path.endswith(".png"))
+        self.assertEqual(run_ffmpeg.call_args[0][0][-1], path)
+
+
 class BudgetAndRunTests(unittest.TestCase):
     def test_budget_stops_after_limit(self):
         budget = run.Budget(max_jobs=1)
@@ -95,7 +134,7 @@ class BudgetAndRunTests(unittest.TestCase):
             {"outputs": ["https://cdn.example/a.jpg"]},
             {"outputs": ["https://cdn.example/a.mp4"]},
         ])
-        client.download = mock.Mock()
+        client.download = mock.Mock(side_effect=fake_download)
         with tempfile.TemporaryDirectory() as tmp:
             manifest = run.run_plan(GOOD_PLAN, tmp, client, run.Budget(2), execute=True, log=lambda *_: None)
             self.assertTrue(os.path.exists(os.path.join(tmp, "manifest.json")))
@@ -105,7 +144,7 @@ class BudgetAndRunTests(unittest.TestCase):
 
     def test_execute_respects_job_cap_before_second_job(self):
         client = FakeClient([{"outputs": ["https://cdn.example/a.jpg"]}])
-        client.download = mock.Mock()
+        client.download = mock.Mock(side_effect=fake_download)
         with tempfile.TemporaryDirectory() as tmp, self.assertRaises(run.BudgetExceeded):
             run.run_plan(GOOD_PLAN, tmp, client, run.Budget(1), execute=True, log=lambda *_: None)
         self.assertEqual(client.submitted, ["/api/v1/nano-banana-2"])

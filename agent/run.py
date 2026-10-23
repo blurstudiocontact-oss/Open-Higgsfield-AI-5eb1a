@@ -10,11 +10,33 @@ import json
 import os
 import sys
 
-from agent.muapi import MuapiClient, MuapiError
+import shutil
+import subprocess
+
+from agent.muapi import MuapiClient, MuapiError, sniff_format
 from agent.planner import plan_brief
 
 IMAGE_ENDPOINT = "nano-banana-2"  # text-to-image, from src/lib/models.js
 VIDEO_ENDPOINT = "seedance-lite-t2v"  # text-to-video, from src/lib/models.js
+ACCEPTED_IMAGE_FORMATS = {"png": ".png", "jpeg": ".jpg", "gif": ".gif", "webp": ".webp"}
+
+
+def save_image(client, url, base_path):
+    """Download an image and store it in a format the image APIs accept (PNG if conversion is needed)."""
+    raw = base_path + ".download"
+    client.download(url, raw)
+    fmt = sniff_format(raw)
+    if fmt in ACCEPTED_IMAGE_FORMATS:
+        final = base_path + ACCEPTED_IMAGE_FORMATS[fmt]
+        os.replace(raw, final)
+        return final
+    if not shutil.which("ffmpeg"):
+        os.remove(raw)
+        raise MuapiError(f"image is {fmt}, which needs ffmpeg to convert to PNG; install ffmpeg")
+    final = base_path + ".png"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", raw, final], check=True)
+    os.remove(raw)
+    return final
 
 
 class BudgetExceeded(RuntimeError):
@@ -46,8 +68,7 @@ def run_plan(plan, out_dir, client, budget, execute, log=print):
         image = client.generate(
             IMAGE_ENDPOINT, {"prompt": shot["image_prompt"], "aspect_ratio": shot["aspect_ratio"]}
         )
-        entry["image"] = os.path.join(out_dir, f"{shot['id']}.jpg")
-        client.download(image["url"], entry["image"])
+        entry["image"] = save_image(client, image["url"], os.path.join(out_dir, shot["id"]))
         log(f"{shot['id']}: image saved to {entry['image']}")
 
         budget.spend()
