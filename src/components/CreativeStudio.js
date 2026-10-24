@@ -12,6 +12,7 @@ import { runNode, runWithUpstream, saveVoiceOutput } from '../lib/creative/runne
 import { getElevenKey, setElevenKey, listVoices } from '../lib/creative/elevenlabs.js';
 import { getMinimaxKey, setMinimaxKey, listSystemVoices, chat } from '../lib/minimax.js';
 import { askAgent } from '../lib/creative/agent.js';
+import { klingStatus, getKlingToken, setKlingToken } from '../lib/kling.js';
 
 const NODE_W = 264;
 const HEADER_H = 38;
@@ -63,6 +64,7 @@ export function CreativeStudio() {
         <div class="cr-empty-title">Start a flow</div>
         <div class="cr-empty-sub">Add a node from the left, drop files on the canvas, or start from a template.</div>
         <div class="cr-empty-actions">
+            <button data-tpl="ugc">UGC Kling (style Arcads)</button>
             <button data-tpl="ad">Product ad with voiceover</button>
             <button data-tpl="podcast">Podcast intro</button>
             <button data-tpl="storyboard">Script → storyboard</button>
@@ -290,7 +292,7 @@ export function CreativeStudio() {
     function renderDecor(n, el) {
         el.className = `cr-node ${n.type === 'comment' ? 'cr-comment' : 'cr-group'} ${selection.has(n.id) ? 'selected' : ''}`;
         el.style.transform = `translate(${n.x}px, ${n.y}px)`;
-        el.style.width = `${n.w}px`;
+        el.style.width = `${n.w || 240}px`;
         if (n.type === 'flow-group') {
             el.style.height = `${n.h}px`;
             el.style.setProperty('--gc', n.color || '#6366f1');
@@ -301,7 +303,9 @@ export function CreativeStudio() {
         const ta = h('textarea', 'cr-comment-text');
         ta.placeholder = 'Write a note…';
         ta.value = n.prompt || '';
-        ta.oninput = () => { n.prompt = ta.value; saveSoon(); };
+        // Grow with the note so nothing is clipped.
+        ta.rows = Math.max(4, ta.value.split('\n').length + 1);
+        ta.oninput = () => { n.prompt = ta.value; ta.rows = Math.max(4, ta.value.split('\n').length + 1); saveSoon(); };
         el.append(ta);
     }
 
@@ -619,17 +623,27 @@ export function CreativeStudio() {
         onSave: () => { save(); renderAll(); },
     };
 
-    function keyFor(n) {
+    // Kling keys live on the server; the page only learns whether the relay
+    // is configured and whether it needs the passcode.
+    let kling = null;
+    const refreshKling = async () => { kling = await klingStatus(); return kling; };
+
+    // Why a node cannot run yet, or null.
+    function blocker(n) {
         const be = modelOf(n)?.backend;
-        if (be === 'minimax' && !getMinimaxKey()) return 'MiniMax';
-        if (be === 'elevenlabs' && !getElevenKey()) return 'ElevenLabs';
+        if (be === 'minimax' && !getMinimaxKey()) return 'Add your MiniMax API key to run this node.';
+        if (be === 'elevenlabs' && !getElevenKey()) return 'Add your ElevenLabs API key to run this node.';
+        if (be === 'kling') {
+            if (kling && !kling.configured) return kling.error || 'Kling is not configured on the server: set KLING_API_KEY (or KLING_ACCESS_KEY and KLING_SECRET_KEY).';
+            if (kling?.passcode_required && !getKlingToken()) return 'Enter the Kling passcode (KLING_PROXY_TOKEN) to run Kling nodes.';
+        }
         return null;
     }
 
     function run(n) {
         if (!n) return;
-        const missing = keyFor(n);
-        if (missing) { settingsModal(`Add your ${missing} API key to run this node.`); return; }
+        const reason = blocker(n);
+        if (reason) { settingsModal(reason); return; }
         runWithUpstream(flow, n, hooks);
     }
 
@@ -637,8 +651,8 @@ export function CreativeStudio() {
         const order = topoOrder().filter(n => !NODE_TYPES[n.type].source);
         if (!order.length) return toast('Nothing to run');
         if (!confirm(`Run ${order.length} node${order.length > 1 ? 's' : ''}? Generation uses your API credits.`)) return;
-        const missing = order.map(keyFor).find(Boolean);
-        if (missing) return settingsModal(`Add your ${missing} API key to run this flow.`);
+        const reason = order.map(blocker).find(Boolean);
+        if (reason) return settingsModal(reason);
         for (const n of order) {
             await runNode(flow, n, hooks);
             if (n.run?.status === 'failed') { toast(`Stopped: ${n.label} failed`); break; }
@@ -1038,11 +1052,26 @@ export function CreativeStudio() {
             <label class="cr-field"><span>ElevenLabs API key <span class="cr-dim">· speech, sound effects, music, voices, dubbing, STT</span></span>
                 <input class="cr-input" type="password" id="cr-el" value="${esc(getElevenKey())}" placeholder="sk_…"></label>
             <a class="cr-link" href="https://elevenlabs.io/app/settings/api-keys" target="_blank" rel="noopener">Create a key in ElevenLabs →</a>
-            <div class="cr-hint">Keys stay in this browser's localStorage and are only sent to their own API.</div>`;
+            <div class="cr-hint">Keys stay in this browser's localStorage and are only sent to their own API.</div>
+            <div class="cr-insp-label" style="margin-top:8px">Kling</div>
+            <div class="cr-dim" id="cr-kl-status">Checking the Kling relay…</div>
+            <label class="cr-field"><span>Kling passcode <span class="cr-dim">· the KLING_PROXY_TOKEN set on the server</span></span>
+                <input class="cr-input" type="password" id="cr-kl" value="${esc(getKlingToken())}" placeholder="passcode"></label>
+            <div class="cr-hint">Kling keys never go in the browser. Put KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) and KLING_PROXY_TOKEN in the site's environment variables on Netlify, or in a local <code>.env</code> file for <code>npm run dev</code>.</div>
+            <a class="cr-link" href="https://app.klingai.com/global/dev" target="_blank" rel="noopener">Get Kling API keys →</a>`;
+        refreshKling().then(st => {
+            const el = m.body.querySelector('#cr-kl-status');
+            if (!el) return;
+            el.textContent = st.configured
+                ? `Relay ready (${st.auth === 'api_key' ? 'API key' : 'access key + secret'})${st.passcode_required ? ', passcode required' : ''}.`
+                : (st.error || 'Relay reachable but no Kling key is set on the server.');
+            el.style.color = st.configured ? '#4ade80' : '#f87171';
+        });
         const btn = h('button', 'cr-btn cr-primary cr-wide', 'Save');
         btn.onclick = () => {
             setMinimaxKey(m.body.querySelector('#cr-mm').value.trim());
             setElevenKey(m.body.querySelector('#cr-el').value.trim());
+            setKlingToken(m.body.querySelector('#cr-kl').value.trim());
             voiceCache = null;
             m.close(); toast('Keys saved');
         };
@@ -1057,6 +1086,7 @@ export function CreativeStudio() {
         const at = (dx, dy) => ({ x: c.x - 500 + dx, y: c.y - 200 + dy });
         const place = (type, dx, dy, extra) => { const p = at(dx, dy); const n = makeNode(type, p.x, p.y, extra); flow.nodes.push(n); return n; };
         const wire = (a, b, port) => addEdge(flow, a.id, b.id, port);
+        if (kind === 'ugc') return ugcTemplate(place, wire);
         if (kind === 'ad') {
             const img = place('image-generation', 0, 0, { label: 'Product shot', prompt: 'Studio product photo of a matte black wireless speaker on a stone plinth, soft rim light, 85mm' });
             const vid = place('video-generation', 340, 0, { label: 'Hero clip', prompt: 'Slow orbit around the speaker, light sweeps across the surface' });
@@ -1210,6 +1240,33 @@ export function CreativeStudio() {
         return out;
     }
 
+    // UGC face-cam video in the style of Arcads, following the Kling method:
+    // step 1 a 9:16 smartphone-style portrait, step 2 either Avatar (photo +
+    // voice) or Image to Video (5 s) followed by Lip Sync.
+    function ugcTemplate(place, wire) {
+        const note = place('comment', -40, -300, { w: 460, prompt: 'UGC Kling\n1. Run « Visage UGC » and pick the best face (Results → Use this).\n2. Write the script; the voice reads it (ElevenLabs or MiniMax).\n3. Option A: Avatar = photo + voice, fastest.\n   Option B: 5 s Image to Video, then Lip Sync with the voice.\nKeep the script to about 5 s (12–15 words) for option B, or set the video to 10 s.' });
+        const face = place('kling-image', 0, 0, {
+            label: 'Visage UGC',
+            prompt: 'Candid iPhone selfie photo of a 22-year-old French woman speaking directly to the camera, wearing a casual hoodie, indoors living room background, natural soft indoor light, ultra-realistic skin texture, authentic UGC style, 9:16 aspect ratio.',
+            params: { aspect_ratio: '9:16', n: 4, resolution: '1k', image_reference: 'face', negative_prompt: 'studio lighting, airbrushed skin, plastic look, watermark, text' },
+        });
+        const script = place('text', 0, 420, { label: 'Script', prompt: 'J\'ai testé ce sérum pendant sept jours, et honnêtement, ma peau n\'a jamais été aussi douce.' });
+        const voice = place('tts', 380, 420, { label: 'Voix', model: 'eleven_multilingual_v2', params: { count: 1 } });
+        const avatar = place('kling-avatar', 780, -40, { label: 'Option A · Avatar', params: { mode: 'std' } });
+        const i2v = place('kling-video', 780, 360, { label: 'Option B · Image to Video', prompt: 'She looks at the camera, blinks softly, moves her head slightly while talking', params: { duration: 5, mode: 'std', cfg_scale: 0.5 } });
+        const sync = place('kling-lipsync', 1160, 360, { label: 'Option B · Lip Sync' });
+        wire(script, voice, 'prompt');
+        wire(face, avatar, 'image'); wire(voice, avatar, 'audio');
+        wire(face, i2v, 'start_frame');
+        wire(i2v, sync, 'video'); wire(voice, sync, 'audio');
+        save(); renderAll();
+        selection = new Set([face.id]); groupSelection('Étape 1 · Visage');
+        selection = new Set([avatar.id]); groupSelection('Option A · Avatar');
+        selection = new Set([i2v.id, sync.id]); groupSelection('Option B · Image to Video + Lip Sync');
+        selection = new Set([note.id]);
+        save(); renderAll(); fitView();
+    }
+
     // ---------- Small UI helpers ----------
     function modal(title, extra = '') {
         const overlay = h('div', 'cr-overlay');
@@ -1261,6 +1318,7 @@ export function CreativeStudio() {
     // ---------- Init ----------
     renderTopbar();
     renderPalette();
+    refreshKling();
     requestAnimationFrame(() => { applyViewport(); renderAll(); });
     root._cleanup = () => { clearTimeout(saveTimer); save(); };
     return root;

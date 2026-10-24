@@ -21,6 +21,7 @@ For a deep dive into the technical architecture and the philosophy behind the "I
 - **Video Studio** — Text-to-video with MiniMax H3, or upload a start frame to animate it. Duration 5 / 10 / 15 s, resolution 768P or 2K, and an `adaptive` ratio for image-to-video.
 - **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture), rendered with MiniMax Image-01.
 - **Creative (ElevenLabs Creative reconstruction)** — A node-based Flows canvas modelled on ElevenLabs Creative. Wire Text, Image, Video, LLM, Text to Speech, Sound Effects, Music, Voice Creation, Voice Changer, Voice Isolator, Speech to Text, Dubbing, Image Editor, Audio Effects and Composition nodes together; each run keeps its variations, the selected one flows downstream, and any variation can be pinned as an asset. Image, video and LLM nodes run on MiniMax; audio nodes run on the ElevenLabs API (optional key) or MiniMax; Image Editor, Audio Effects and Composition run in the browser. Includes an Agent panel that builds and edits flows from chat, comments and groups, a Structure outline, prompt improvement, templates, an asset library, a voice picker and brand kits. Built with the REA skill (static analysis of the shipped web app). See [docs/elevenlabs-creative-reconstruction.md](docs/elevenlabs-creative-reconstruction.md).
+- **Kling (UGC style Arcads)** — Kling Image, Kling Image to Video, Kling Lip Sync and Kling Avatar nodes on the Creative canvas, calling the official Kling API through the app's own server relay so renders play right in the app. The **UGC Kling** template builds the face-cam workflow: a 9:16 smartphone-style portrait, a script read by a voice, then either Avatar (photo + voice) or a 5 s Image to Video followed by Lip Sync. See [Kling setup](#kling-setup).
 - **OBS Studio** — Browser reconstruction of OBS: scenes and sources (screen, webcam, mic, image, media, text, color), drag/resize preview, filters and chroma key, audio mixer with meters, Studio Mode with transitions and T-Bar, local recording and WHIP streaming. Its **MiniMax H3** dialog edits a recording or clip, animates a studio frame, or generates from text, and drops the result into the scene. See [docs/obs-reconstruction.md](docs/obs-reconstruction.md).
 - **Daydream Scope (real-time AI)** — In OBS Studio, a **Daydream Scope (AI)** source streams the webcam or another source to a [Daydream Scope](https://github.com/daydreamlive/scope) server and shows the transformed video live; prompts can change while streaming. The **Daydream** panel manages Scope plugins (install, update, uninstall) and lists the pipelines they add. Requires a Scope server on a GPU machine or cloud box.
 - **Upload History** — Reference images are uploaded once and stored locally. A picker panel lets you reuse any previously uploaded image across sessions.
@@ -171,3 +172,17 @@ Video and images by [MiniMax](https://platform.minimax.io) (H3, Image-01).
 
 ---
 *Looking for a free Higgsfield AI alternative? Open Higgsfield AI is an open-source AI image and video generation studio and Higgsfield AI replacement that you can self-host, customize, and extend.*
+
+## Kling setup
+
+Kling keys never go in the browser. The app calls `/api/kling/*`, a relay (`server/kling-proxy.mjs`) that adds your key and forwards to the Kling API.
+
+1. Create API keys at [app.klingai.com/global/dev](https://app.klingai.com/global/dev).
+2. Set the environment variables (see `.env.example`):
+   - `KLING_API_KEY`, or `KLING_ACCESS_KEY` and `KLING_SECRET_KEY`
+   - `KLING_PROXY_TOKEN`: a passcode of your choice. Required once deployed, so strangers cannot spend your credits.
+3. Locally: put them in a `.env` file and run `npm run dev`. On Netlify: Site configuration → Environment variables, then redeploy (`netlify/functions/kling.mjs` serves the relay).
+4. In the app: **Creative → Settings → Kling passcode**, enter the same passcode.
+
+Limits: voice audio sent to Lip Sync or Avatar must be under 5 MB; Lip Sync takes a 5 or 10 s video made by Kling in the last 30 days (or a public video URL).
+

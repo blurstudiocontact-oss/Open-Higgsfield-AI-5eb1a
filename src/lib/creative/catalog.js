@@ -198,9 +198,55 @@ export const NODE_TYPES = {
         models: [{ id: 'dubbing_v2_video', name: 'ElevenLabs Dubbing', backend: 'elevenlabs' }],
         params: [text('target_language_code', 'Target language', 'es')],
     },
+
+    // ---- Kling (official API through the app's relay) ----
+    'kling-image': {
+        label: 'Kling Image', group: 'Kling', output: 'image', prompt: 'Describe the photo',
+        inputs: [PROMPT_PORT, port('reference', 'Reference', ['image'])],
+        models: [
+            { id: 'kling-v2-1', name: 'Kling 2.1', backend: 'kling' },
+            { id: 'kling-v2', name: 'Kling 2.0', backend: 'kling' },
+            { id: 'kling-v1-5', name: 'Kling 1.5', backend: 'kling' },
+        ],
+        params: [
+            sel('aspect_ratio', ['9:16', '16:9', '1:1', '4:3', '3:4', '3:2', '2:3', '21:9'], '9:16', 'Aspect ratio'),
+            sel('n', [1, 2, 3, 4], 4, 'Variations'),
+            sel('resolution', ['1k', '2k'], '1k', 'Resolution'),
+            sel('image_reference', ['subject', 'face'], 'face', 'Reference keeps'),
+            { name: 'negative_prompt', type: 'textarea', label: 'Negative prompt' },
+        ],
+    },
+    'kling-video': {
+        label: 'Kling Image to Video', group: 'Kling', output: 'video', prompt: 'Describe the motion',
+        inputs: [PROMPT_PORT, port('start_frame', 'Start frame', ['image']), port('end_frame', 'End frame', ['image'])],
+        models: [
+            { id: 'kling-v2-5-turbo', name: 'Kling 2.5 Turbo', backend: 'kling' },
+            { id: 'kling-v2-1-master', name: 'Kling 2.1 Master', backend: 'kling' },
+            { id: 'kling-v2-1', name: 'Kling 2.1', backend: 'kling' },
+            { id: 'kling-v1-6', name: 'Kling 1.6', backend: 'kling' },
+        ],
+        params: [
+            sel('duration', [5, 10], 5, 'Duration (s)'),
+            sel('mode', ['std', 'pro'], 'std', 'Quality'),
+            num('cfg_scale', 0, 1, 0.5, 0.05, 'Prompt adherence'),
+            { name: 'negative_prompt', type: 'textarea', label: 'Negative prompt' },
+        ],
+    },
+    'kling-lipsync': {
+        label: 'Kling Lip Sync', group: 'Kling', output: 'video',
+        inputs: [port('video', 'Video', ['video']), port('audio', 'Voice audio', ['audio'])],
+        models: [{ id: 'kling-lipsync', name: 'Kling Lip Sync', backend: 'kling' }],
+        params: [],
+    },
+    'kling-avatar': {
+        label: 'Kling Avatar', group: 'Kling', output: 'video', prompt: 'Optional: expression, gestures',
+        inputs: [port('image', 'Face photo', ['image']), port('audio', 'Voice audio', ['audio'])],
+        models: [{ id: 'kling-avatar', name: 'Kling Avatar', backend: 'kling' }],
+        params: [sel('mode', ['std', 'pro'], 'std', 'Quality')],
+    },
 };
 
-export const GROUPS = ['Sources', 'Generate', 'Audio', 'Edit'];
+export const GROUPS = ['Sources', 'Generate', 'Audio', 'Edit', 'Kling'];
 
 // Ops the in-browser Image Editor understands, applied in this order.
 export const IMAGE_OPS = {

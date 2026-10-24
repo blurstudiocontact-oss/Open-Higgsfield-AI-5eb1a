@@ -113,3 +113,23 @@ MiniMax's expiring URLs.
   AI ops have no browser equivalent here.
 - MiniMax Music and Voice Design request shapes follow the public API docs and
   have not been exercised against a live key in this session.
+
+## Kling extension (not part of ElevenLabs Creative)
+
+Four nodes call the official Kling API through `server/kling-proxy.mjs`
+(Netlify function in production, Vite middleware in development):
+
+| Node | Route | Notes |
+|------|-------|-------|
+| Kling Image | `POST /v1/images/generations` | `aspect_ratio` (9:16 default), `n`, `resolution`, optional face/subject reference |
+| Kling Image to Video | `POST /v1/videos/image2video` | start/end frame, `mode` std/pro, `duration` 5/10 |
+| Kling Lip Sync | `POST /v1/videos/lip-sync` | `audio2video`, `video_id` of a Kling video (else `video_url`), audio as base64 ≤ 5 MB |
+| Kling Avatar | `POST /v1/videos/avatar/image2video` | `image` + `sound_file`, `mode` |
+
+Each task is polled at `GET <route>/<task_id>` until `task_status` is
+`succeed`. Auth is a bearer API key, or an HS256 JWT signed from the access
+and secret keys (`iss`, `exp` +30 min, `nbf` −5 s). Field names come from
+Kling's API spec and the `mcp-kling` client; the Avatar route was not
+confirmed against Kling's official page, which only renders in a browser.
+Tested end to end against a local mock of these routes, not against Kling.
+

@@ -7,13 +7,15 @@ import { putMedia, outputBlob, outputUrl, selectedOutput, uid, brandKitPrompt, l
 import * as el from './elevenlabs.js';
 import { generateImages, submitVideo, waitForVideo, uploadToMinimax, synthesizeSpeech, generateMusic, designVoice as mmDesignVoice, chat } from '../minimax.js';
 import { transformImage, applyAudioEffects, compose } from './local.js';
+import * as kling from '../kling.js';
 
 // Inputs for a node: { portKey: [output, ...] } in edge order.
 export function gatherInputs(flow, node) {
     const inputs = {};
     for (const e of flow.edges.filter(x => x.to === node.id)) {
         const src = flow.nodes.find(n => n.id === e.from);
-        const out = selectedOutput(src);
+        // A Text node always offers its current text, run or not.
+        const out = src?.type === 'text' ? (src.prompt?.trim() ? { kind: 'text', text: src.prompt } : null) : selectedOutput(src);
         (inputs[e.toPort] ||= []);
         if (out) inputs[e.toPort].push({ ...out, edgeId: e.id, nodeId: src.id });
     }
@@ -83,6 +85,21 @@ async function keepRemote(url, kind, meta) {
         return { kind, url };
     }
 }
+
+// Kling accepts an image as an https URL or raw base64.
+async function klingImage(out) {
+    if (out.url && /^https?:/.test(out.url)) return out.url;
+    return blobToDataUrl(await outputBlob(out));
+}
+
+const AUDIO_LIMIT = 5 * 1024 * 1024;
+async function klingAudio(out) {
+    const blob = await outputBlob(out);
+    if (blob.size > AUDIO_LIMIT) throw new Error(`Audio trop lourd pour Kling (${(blob.size / 1048576).toFixed(1)} Mo, max 5 Mo) : raccourcis le texte`);
+    return (await blobToDataUrl(blob)).replace(/^data:[^,]+,/, '');
+}
+
+const klingVideos = (videos, meta) => Promise.all(videos.map(async v => ({ ...(await keepRemote(v.url, 'video', meta)), url: v.url, klingVideoId: v.id })));
 
 const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -273,6 +290,53 @@ async function execute(flow, node, inputs, stage) {
         const src = firstSource(inputs);
         stage('Transcribing');
         return [{ kind: 'text', text: await el.speechToText(await outputBlob(src)) }];
+    }
+
+    case 'kling-image': {
+        const prompt = promptFor(node, inputs);
+        const ref = inputs.reference?.[0];
+        const urls = await kling.generateImage({
+            prompt, model: model.id, aspectRatio: p.aspect_ratio, n: +p.n || 1, resolution: p.resolution,
+            negative: p.negative_prompt, reference: ref ? await klingImage(ref) : null, referenceKind: ref ? p.image_reference : null,
+            onStage: stage,
+        });
+        if (!urls.length) throw new Error('Kling n\'a renvoyé aucune image');
+        stage('Enregistrement');
+        // Keep Kling's public URL too: later Kling calls can pass it instead of base64.
+        return Promise.all(urls.map(async u => ({ ...(await keepRemote(u, 'image', meta)), url: u })));
+    }
+
+    case 'kling-video': {
+        const start = inputs.start_frame?.[0];
+        if (!start) throw new Error('Branche une image sur « Start frame »');
+        const prompt = promptFor(node, inputs, { required: false });
+        stage('Envoi à Kling');
+        const videos = await kling.imageToVideo({
+            image: await klingImage(start), imageTail: inputs.end_frame?.[0] ? await klingImage(inputs.end_frame[0]) : null,
+            prompt, negative: p.negative_prompt, model: model.id, mode: p.mode, duration: p.duration, cfgScale: p.cfg_scale,
+            onStage: stage,
+        });
+        return klingVideos(videos, meta);
+    }
+
+    case 'kling-lipsync': {
+        const video = inputs.video?.[0], audio = inputs.audio?.[0];
+        if (!video) throw new Error('Branche une vidéo Kling sur « Video »');
+        if (!audio) throw new Error('Branche une voix (Text to Speech ou fichier audio) sur « Voice audio »');
+        const videoUrl = !video.klingVideoId && video.url && /^https?:/.test(video.url) ? video.url : null;
+        if (!video.klingVideoId && !videoUrl) throw new Error('Le Lip Sync Kling a besoin d\'une vidéo générée par Kling (ou d\'une vidéo en ligne)');
+        stage('Envoi à Kling');
+        const videos = await kling.lipSync({ videoId: video.klingVideoId, videoUrl, audioBase64: await klingAudio(audio), onStage: stage });
+        return klingVideos(videos, meta);
+    }
+
+    case 'kling-avatar': {
+        const img = inputs.image?.[0], audio = inputs.audio?.[0];
+        if (!img) throw new Error('Branche la photo du visage sur « Face photo »');
+        if (!audio) throw new Error('Branche une voix (Text to Speech ou fichier audio) sur « Voice audio »');
+        stage('Envoi à Kling');
+        const videos = await kling.avatar({ image: await klingImage(img), soundFile: await klingAudio(audio), prompt: node.prompt?.trim(), mode: p.mode, onStage: stage });
+        return klingVideos(videos, meta);
     }
 
     case 'dubbing-audio':
