@@ -16,6 +16,7 @@ For a deep dive into the technical architecture and the philosophy behind the "I
 
 ## ✨ Features
 
+- **Reels (home page)** — A TikTok / CapCut-style editor for 9:16 reels. Record in segments from the camera or screen (15 s / 60 s / 3 min, countdown, live filters, optional Daydream AI look), or import videos and photos. Edit on a timeline with a centre playhead: trim by dragging clip edges, split, reorder, duplicate, speed (0.25×–4×), volume, filters, brightness/contrast/saturation, fit/fill, and transitions (dissolve, fade to black, flash, slide, zoom). Add animated text and emoji stickers you can drag on the preview, music, and voiceovers recorded over the reel. AI tools: **MiniMax H3** edits a clip, animates a photo or the current frame, or generates a clip from text; **Image-01** generates a photo. Export renders 1080 × 1920 at 30 fps (MP4 where the browser supports it, otherwise WebM). Projects and media are saved in the browser (localStorage + IndexedDB).
 - **Image Studio** — Text-to-image with MiniMax Image-01 (8 aspect ratios). Upload a portrait to switch to subject reference (Image-01 or Image-01 Live) and place the same person in a new scene.
 - **Video Studio** — Text-to-video with MiniMax H3, or upload a start frame to animate it. Duration 5 / 10 / 15 s, resolution 768P or 2K, and an `adaptive` ratio for image-to-video.
 - **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture), rendered with MiniMax Image-01.
@@ -95,6 +96,7 @@ The browser calls MiniMax through same-origin proxy paths (`/minimax-api`, `/min
 ```
 src/
 ├── components/
+│   ├── ReelStudio.js     # TikTok/CapCut-style reel editor: capture, timeline, AI, export
 │   ├── ImageStudio.js    # Text-to-image and subject-reference studio
 │   ├── VideoStudio.js    # Text-to-video and image-to-video studio (H3)
 │   ├── CinemaStudio.js   # Pro studio with camera controls & infinite canvas flow
@@ -109,12 +111,14 @@ src/
 │   ├── minimax.js        # MiniMax API client: H3 video, Image-01, file upload
 │   ├── daydream.js       # Daydream Scope client: pipelines, plugins, WebRTC streaming
 │   ├── models.js         # MiniMax model catalog (inputs drive the pickers)
+│   ├── reels/            # Reel project store (localStorage + IndexedDB) and playback/export engine
 │   ├── obs/              # OBS engine: scenes, sources, compositor, audio, outputs, H3 jobs
 │   └── uploadHistory.js  # localStorage CRUD + canvas thumbnail generation for upload history
 ├── styles/
 │   ├── global.css        # Global styles and animations
 │   ├── studio.css        # Studio-specific styles
 │   ├── obs.css           # OBS page styles
+│   ├── reels.css         # Reel editor styles
 │   └── variables.css     # CSS custom properties
 ├── main.js               # App entry point
 └── style.css             # Tailwind imports

@@ -25,15 +25,15 @@ export function Header(navigate) {
 
     const menu = document.createElement('nav');
     menu.className = 'hidden lg:flex items-center gap-6 text-[13px] font-bold text-secondary';
-    const items = ['Explore', 'Image', 'Video', 'Edit', 'Character', 'Contests', 'Vibe Motion', 'Cinema Studio', 'OBS Studio', 'AI Influencer', 'Apps', 'Assist', 'Community'];
+    const items = ['Reels', 'Explore', 'Image', 'Video', 'Edit', 'Character', 'Contests', 'Vibe Motion', 'Cinema Studio', 'OBS Studio', 'AI Influencer', 'Apps', 'Assist', 'Community'];
 
     items.forEach(item => {
         const link = document.createElement('a');
         link.textContent = item;
-        link.className = `hover:text-white transition-all cursor-pointer relative group ${item === 'Image' ? 'text-white' : ''}`;
+        link.className = `hover:text-white transition-all cursor-pointer relative group ${item === 'Reels' ? 'text-white' : ''}`;
 
         // Active Indicator or Dot
-        if (item === 'Image') {
+        if (item === 'Reels') {
             const dot = document.createElement('div');
             dot.className = 'absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-primary rounded-full';
             link.appendChild(dot);
@@ -49,7 +49,8 @@ export function Header(navigate) {
             // Add to current
             link.classList.add('text-white');
 
-            if (item === 'Image') navigate('image');
+            if (item === 'Reels') navigate('reels');
+            else if (item === 'Image') navigate('image');
             else if (item === 'Video') navigate('video');
             else if (item === 'Cinema Studio') navigate('cinema');
             else if (item === 'OBS Studio') navigate('obs');
