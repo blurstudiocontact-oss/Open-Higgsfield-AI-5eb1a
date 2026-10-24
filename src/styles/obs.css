@@ -370,3 +370,7 @@
 .obs-mm-jobs li.done .obs-mm-job-stage { color: #7bd88f; }
 .obs-mm-jobs a { color: #8fa8ff; }
 .obs-modal [hidden] { display: none !important; }
+.obs-mm-preview { width: 100%; max-height: 200px; background: #000; border-radius: 3px; }
+.obs-mm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
+.obs-mm-key { display: flex; gap: 6px; align-items: flex-end; }
+.obs-mm-key label { flex: 1; }

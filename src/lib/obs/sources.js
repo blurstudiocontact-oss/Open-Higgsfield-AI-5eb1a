@@ -2,6 +2,8 @@
 // each persisted source. Persisted settings live in store.js; anything that
 // cannot survive a reload (streams, object URLs) lives here.
 
+import { clipFetchUrl } from './minimax.js';
+
 export class SourceRuntime {
     constructor(source, audio) {
         this.source = source;
@@ -9,6 +11,7 @@ export class SourceRuntime {
         this.drawable = null;    // HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
         this.stream = null;
         this.objectUrl = null;
+        this.mediaBlob = null;   // file behind a media source, reusable as an edit source
         this.status = 'idle';    // idle | needs-activation | ready | error
         this.error = '';
         this.textDirty = true;
@@ -86,7 +89,7 @@ export class SourceRuntime {
                     settings.url = '';
                 } else if (settings.url) {
                     // Downloaded into a blob so the canvas stays untainted for recording.
-                    const res = await fetch(settings.url);
+                    const res = await fetch(clipFetchUrl(settings.url));
                     if (!res.ok) throw new Error(`Could not download clip (${res.status})`);
                     file = await res.blob();
                 } else {
@@ -94,6 +97,7 @@ export class SourceRuntime {
                     this.onChange();
                     return;
                 }
+                this.mediaBlob = file;
                 this.objectUrl = URL.createObjectURL(file);
                 const video = document.createElement('video');
                 video.src = this.objectUrl;
@@ -200,6 +204,7 @@ export class SourceRuntime {
         }
         if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
         this.objectUrl = null;
+        this.mediaBlob = null;
         if (!(this.drawable instanceof HTMLCanvasElement)) this.drawable = null;
     }
 

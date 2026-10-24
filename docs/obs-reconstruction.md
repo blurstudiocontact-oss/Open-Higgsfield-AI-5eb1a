@@ -55,23 +55,48 @@ observed and correct any divergence.
   until reactivated from Properties. Large images may be dropped when storage
   is full.
 
-## Minimax AI (extension, not part of OBS)
+## MiniMax AI (extension, not part of OBS)
 
-The **Minimax AI** button (Controls dock) and **Reanimate with Minimax**
-(source context menu) call MiniMax Hailuo 2.3 through Muapi, using the app's
-existing `muapi_key`. Code: `src/lib/obs/minimax.js`.
+The **MiniMax AI** button (Controls dock) and the source context menu
+(**Edit with MiniMax H3** on media sources, **Animate with MiniMax** on the
+others) open one dialog. Code: `src/lib/obs/minimax.js`.
 
-- **Reanimate a frame** (image-to-video: Hailuo 2.3 Pro, Standard or Fast).
-  The start frame comes from the program output, the preview scene, a scene
-  source (crop applied) or a chosen time in the last recording. It is uploaded
-  as JPEG, then animated from the prompt.
-- **Generate from text** (text-to-video: Hailuo 2.3 Pro or Standard).
-- The result is added to the scene that was being edited as a Media Source
-  that keeps the clip URL. It is downloaded into a blob so the canvas stays
-  untainted for recording and streaming, and is fetched again after a reload.
-  This needs the clip host to allow CORS.
-- Hailuo models generate clips: they do not edit an existing video in place.
-  "Editing" here means taking a frame from the studio and reanimating it.
+**MiniMax H3**, through the hosted MiniMax API with a MiniMax API key
+(Settings → MiniMax):
+
+- **Edit a video**: the last recording, a media source in the scene, or a
+  local file is uploaded (`/v1/files/upload`). It is sent as `reference_video`
+  in Ref2VA mode, with a prompt that declares `<Video 1>` as the source video
+  for the editing task, followed by the edit instruction. An optional
+  reference image (`<Picture 1>`) can be taken from the studio.
+- **Animate a frame**: a studio frame is sent as `first_frame`.
+- **Text to video**.
+- Options: resolution `768P`/`2K`, duration 5–15 s, ratio (`adaptive`,
+  16:9, 9:16, 1:1, 4:3, 3:4, 21:9).
+- Flow: `POST /v2/video_generation`, poll `GET /v1/query/video_generation`,
+  then resolve the `file_id` with `GET /v1/files/retrieve`. Submitted task ids
+  are kept in `localStorage`, so a reload resumes waiting for them.
+
+**Hailuo 2.3**, through Muapi with the app's `muapi_key`: animate a frame
+(Pro, Standard, Fast) or text to video (Pro, Standard). It cannot edit a
+video.
+
+Sources: [MiniMax-AI/awesome-minimax-h3-integration](https://github.com/MiniMax-AI/awesome-minimax-h3-integration)
+and the API notes it links in
+[joeVenner/awesome-minimax-h3](https://github.com/joeVenner/awesome-minimax-h3),
+which say they were verified against the live API.
+
+Results are added to the scene being edited as Media Sources that keep the
+clip URL. Clips are downloaded into a blob so the canvas stays untainted for
+recording and streaming, and fetched again after a reload.
+
+Browser access (CORS):
+
+- In development, Vite proxies `/minimax-api` to `api.minimax.io` and
+  `/minimax-cdn` to `video-product.cdn.minimax.io`.
+- In production, requests go straight to `https://api.minimax.io` unless an
+  API base URL (your own proxy) is set in Settings.
+- None of this was tested against the real API.
 
 ## Unknowns and gaps
 

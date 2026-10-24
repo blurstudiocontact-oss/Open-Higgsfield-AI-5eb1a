@@ -6,7 +6,10 @@ import { SourceRuntime } from '../lib/obs/sources.js';
 import { AudioMixer, MIN_DB, sliderToMul, mulToSlider, mulToDb } from '../lib/obs/audio.js';
 import { renderScene, itemBounds, Transitioner } from '../lib/obs/compositor.js';
 import { Recorder, WhipStreamer, supportedFormats } from '../lib/obs/outputs.js';
-import { MINIMAX_MODELS, modelOptions, frameToFile, snapshotDrawable, runMinimaxJob } from '../lib/obs/minimax.js';
+import {
+    H3, HAILUO_MODELS, hailuoOptions, frameToFile, snapshotDrawable, runMinimaxJob, h3Wait,
+    getMinimaxKey, setMinimaxKey, getMinimaxBase, setMinimaxBase, pendingTasks, rememberTask, forgetTask,
+} from '../lib/obs/minimax.js';
 import { AuthModal } from './AuthModal.js';
 
 const ICONS = {
@@ -106,7 +109,7 @@ export function ObsStudio() {
                     </div>
                     <button class="obs-btn" data-action="studio">Studio Mode</button>
                     <button class="obs-btn" data-action="projector">Windowed Projector</button>
-                    <button class="obs-btn" data-action="minimax">Minimax AI</button>
+                    <button class="obs-btn" data-action="minimax">MiniMax AI</button>
                     <button class="obs-btn" data-action="settings">Settings</button>
                 </div>
             </section>
@@ -359,7 +362,9 @@ export function ObsStudio() {
             { label: 'Transform: Flip Horizontal', action: () => transformAction(item, 'flipH') },
             { label: 'Transform: Flip Vertical', action: () => transformAction(item, 'flipV') },
             { separator: true },
-            { label: 'Reanimate with Minimax', action: () => openMinimax({ frameSource: `item:${item.id}` }) },
+            source.type === 'media'
+                ? { label: 'Edit with MiniMax H3', action: () => openMinimax({ mode: 'edit', videoSource: `item:${item.id}` }) }
+                : { label: 'Animate with MiniMax', action: () => openMinimax({ mode: 'i2v', frameSource: `item:${item.id}` }) },
             { label: 'Filters', action: () => openProperties(source, item, 'filters') },
             { label: 'Properties', action: () => openProperties(source, item) },
         ];
@@ -1208,6 +1213,10 @@ export function ObsStudio() {
                 <p class="obs-note">Browsers cannot speak RTMP, so streaming uses WHIP (WebRTC-HTTP ingest), which OBS also offers as a service.</p>
                 <h4>Audio</h4>
                 <label>Mic/Auxiliary Audio<select data-k="mic"><option value="">Disabled</option></select></label>
+                <h4>MiniMax</h4>
+                <label>MiniMax API key (for H3)<input type="password" data-k="mmKey" autocomplete="off" placeholder="From platform.minimax.io"></label>
+                <label>API base URL<input type="url" data-k="mmBase" placeholder="Default: https://api.minimax.io"></label>
+                <p class="obs-note">Keys are stored in this browser only. Set a base URL to go through your own proxy if the MiniMax API refuses browser requests (CORS).</p>
             </div>`;
         const q = (k) => modal.body.querySelector(`[data-k="${k}"]`);
         if (recorder.state !== 'inactive' || streamer.active) {
@@ -1230,6 +1239,10 @@ export function ObsStudio() {
         q('audioBitrate').onchange = (e) => { st.audioBitrate = +e.target.value; save(); };
         q('whipUrl').oninput = (e) => { st.whipUrl = e.target.value.trim(); save(); };
         q('whipToken').oninput = (e) => { st.whipToken = e.target.value; save(); };
+        q('mmKey').value = getMinimaxKey();
+        q('mmBase').value = getMinimaxBase();
+        q('mmKey').onchange = (e) => setMinimaxKey(e.target.value.trim());
+        q('mmBase').onchange = (e) => setMinimaxBase(e.target.value.trim());
         const mic = q('mic');
         navigator.mediaDevices?.enumerateDevices().then(devices => {
             devices.filter(d => d.kind === 'audioinput').forEach((d, i) => {
@@ -1249,7 +1262,7 @@ export function ObsStudio() {
         };
     }
 
-    // ---------- Minimax AI (Hailuo 2.3 through Muapi) ----------
+    // ---------- MiniMax AI (H3 through the MiniMax API, Hailuo 2.3 through Muapi) ----------
     const jobs = [];
     let renderJobs = () => {};
 
@@ -1285,12 +1298,30 @@ export function ObsStudio() {
         return snapshotDrawable(rt.drawable, w, h, item.transform.crop);
     }
 
-    function addGeneratedClip(sceneId, url, prompt) {
+    // Video files H3 can edit: the last recording and loaded media sources.
+    function editableVideos() {
+        const out = [];
+        if (recorder.last) {
+            const { blob, name } = recorder.last;
+            out.push({ id: 'recording', label: `Last recording (${name})`, file: new File([blob], name, { type: blob.type }) });
+        }
+        editScene().items.forEach(i => {
+            const src = col.sources[i.sourceId];
+            const rt = runtimes.get(i.sourceId);
+            if (src?.type !== 'media' || !rt?.mediaBlob) return;
+            const blob = rt.mediaBlob;
+            const name = blob.name || `${src.name}.${(blob.type.split('/')[1] || 'mp4').split(';')[0]}`;
+            out.push({ id: `item:${i.id}`, label: `Source: ${src.name}`, file: blob instanceof File ? blob : new File([blob], name, { type: blob.type }) });
+        });
+        return out;
+    }
+
+    function addGeneratedClip(sceneId, url, prompt, tag) {
         const scene = sceneById(sceneId) || editScene();
         const short = prompt ? prompt.slice(0, 24) + (prompt.length > 24 ? '…' : '') : 'clip';
-        const source = createSource('media', uniqueName(col, `Hailuo: ${short}`));
+        const source = createSource('media', uniqueName(col, `${tag}: ${short}`));
         source.settings.url = url;
-        source.settings.fileName = 'Hailuo 2.3 clip';
+        source.settings.fileName = `${tag} clip`;
         col.sources[source.id] = source;
         const item = createItem(source.id);
         scene.items.unshift(item);
@@ -1301,43 +1332,82 @@ export function ObsStudio() {
         save();
     }
 
-    async function startJob(opts) {
-        const job = { id: uid('job'), label: opts.prompt || '(no prompt)', stage: 'Starting', error: '', url: '' };
+    async function trackJob(job, work) {
         jobs.unshift(job);
         renderJobs();
         try {
-            job.url = await runMinimaxJob(opts, (stage) => { job.stage = stage; renderJobs(); });
+            job.url = await work((stage) => { job.stage = stage; renderJobs(); });
             job.stage = 'Adding to scene';
             renderJobs();
-            addGeneratedClip(opts.sceneId, job.url, opts.prompt);
+            addGeneratedClip(job.sceneId, job.url, job.label, job.tag);
             job.stage = 'Done';
-            toast('Minimax clip added to the scene');
+            toast(`${job.tag} clip added to the scene`);
         } catch (err) {
             job.stage = 'Failed';
             job.error = err.message;
-            toast(`Minimax: ${err.message}`);
+            toast(`${job.tag}: ${err.message}`);
         }
+        if (job.taskId) forgetTask(job.taskId);
         renderJobs();
+    }
+
+    function startJob(opts) {
+        const tag = opts.provider === 'h3' ? 'H3' : 'Hailuo';
+        const job = { id: uid('job'), label: opts.prompt || '(no prompt)', tag, sceneId: opts.sceneId, stage: 'Starting', error: '', url: '' };
+        trackJob(job, (onStage) => runMinimaxJob(opts, onStage, (taskId) => {
+            job.taskId = taskId;
+            rememberTask({ taskId, sceneId: opts.sceneId, prompt: job.label });
+        }));
+    }
+
+    // H3 tasks outlive the page: pick them back up after a reload.
+    function resumePendingTasks() {
+        pendingTasks().forEach(t => {
+            const job = { id: uid('job'), label: t.prompt, tag: 'H3', sceneId: t.sceneId, taskId: t.taskId, stage: 'Resuming', error: '', url: '' };
+            trackJob(job, (onStage) => h3Wait(t.taskId, onStage));
+        });
     }
 
     function openMinimax(preset = {}) {
         const state = {
-            mode: preset.mode || 'i2v',
-            frameSource: preset.frameSource || 'program',
-            prompt: preset.prompt || '',
-            model: preset.model || MINIMAX_MODELS.i2v[0]?.id,
-            duration: preset.duration,
-            recordingTime: 0,
+            mode: 'edit',
+            provider: 'h3',
+            frameSource: 'program',
+            videoSource: '',
+            useRef: false,
+            prompt: '',
+            model: HAILUO_MODELS.i2v[0]?.id,
+            duration: undefined,
+            h3Resolution: '768P',
+            h3Duration: 5,
+            h3Ratio: 'adaptive',
+            ...preset,
         };
-        const modal = openModal('Minimax AI — Hailuo 2.3');
+        let localVideo = preset.localVideo || null;
+        const modal = openModal('MiniMax AI');
         modal.body.innerHTML = `
             <div class="obs-tabs">
-                <button data-mode="i2v">Reanimate a frame</button>
-                <button data-mode="t2v">Generate from text</button>
+                <button data-mode="edit">Edit a video (H3)</button>
+                <button data-mode="i2v">Animate a frame</button>
+                <button data-mode="t2v">Text to video</button>
             </div>
             <div class="obs-form">
+                <label data-k="provider-row">Model<select data-k="provider">
+                    <option value="h3">MiniMax H3 (MiniMax API)</option>
+                    <option value="hailuo">Hailuo 2.3 (Muapi)</option>
+                </select></label>
+                <div data-k="key-row" class="obs-mm-key">
+                    <label>MiniMax API key<input type="password" data-k="key" autocomplete="off" placeholder="From platform.minimax.io"></label>
+                    <button class="obs-btn" data-k="save-key">Save key</button>
+                </div>
+                <div data-k="video-block">
+                    <label>Source video<select data-k="videoSource"></select></label>
+                    <video data-k="srcPreview" class="obs-mm-preview" controls muted playsinline></video>
+                    <p class="obs-note" data-k="video-note"></p>
+                    <label><input type="checkbox" data-k="useRef"> Add a reference image</label>
+                </div>
                 <div data-k="frame-block">
-                    <label>Start frame<select data-k="frameSource"></select></label>
+                    <label data-k="frame-label">Start frame<select data-k="frameSource"></select></label>
                     <div data-k="recording-block" hidden>
                         <video data-k="recVideo" class="obs-mm-rec" muted playsinline></video>
                         <label>Frame time<input type="range" data-k="recTime" min="0" max="1000" value="0"></label>
@@ -1345,27 +1415,43 @@ export function ObsStudio() {
                     <canvas data-k="thumb" class="obs-mm-thumb"></canvas>
                     <button class="obs-btn" data-k="refresh">Refresh frame</button>
                 </div>
-                <label>Prompt<textarea data-k="prompt" rows="3" placeholder="Describe the motion: camera move, action, mood…"></textarea></label>
-                <label>Model<select data-k="model"></select></label>
-                <label data-k="duration-row">Duration<select data-k="duration"></select></label>
+                <label><span data-k="prompt-label">Prompt</span><textarea data-k="prompt" rows="4"></textarea></label>
+                <div data-k="h3-opts" class="obs-mm-grid">
+                    <label>Resolution<select data-k="h3Resolution">${H3.resolutions.map(r => `<option>${r}</option>`).join('')}</select></label>
+                    <label>Duration (s)<input type="number" data-k="h3Duration" min="${H3.minDuration}" max="${H3.maxDuration}" step="1"></label>
+                    <label>Ratio<select data-k="h3Ratio">${H3.ratios.map(r => `<option>${r}</option>`).join('')}</select></label>
+                </div>
+                <div data-k="hailuo-opts" class="obs-mm-grid">
+                    <label>Hailuo model<select data-k="model"></select></label>
+                    <label data-k="duration-row">Duration<select data-k="duration"></select></label>
+                </div>
                 <button class="obs-btn obs-primary" data-k="generate">Generate</button>
-                <p class="obs-note">The clip is added to the current scene as a Media Source when it is ready. Generation can take several minutes and uses your Muapi credits.</p>
+                <p class="obs-note" data-k="footnote"></p>
                 <h4>Jobs</h4>
                 <ul class="obs-mm-jobs" data-k="jobs"></ul>
             </div>`;
         const q = (k) => modal.body.querySelector(`[data-k="${k}"]`);
         const sceneId = editScene().id;
         const recVideo = q('recVideo');
+        const srcPreview = q('srcPreview');
+        const urls = [];
         let frameCanvas = null;
-        let recUrl = null;
+        let videos = [];
+        let previewUrl = null;
 
         if (recorder.last) {
-            recUrl = URL.createObjectURL(recorder.last.blob);
-            recVideo.src = recUrl;
+            const u = URL.createObjectURL(recorder.last.blob);
+            urls.push(u);
+            recVideo.src = u;
+        }
+
+        function options(sel, opts, value) {
+            sel.innerHTML = '';
+            opts.forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
+            sel.value = value;
         }
 
         function fillFrameSources() {
-            const sel = q('frameSource');
             const opts = [['program', 'Program output']];
             if (studioMode) opts.push(['preview', 'Preview scene']);
             editScene().items.forEach(i => {
@@ -1373,25 +1459,45 @@ export function ObsStudio() {
                 if (src && SOURCE_TYPES[src.type].video) opts.push([`item:${i.id}`, `Source: ${src.name}`]);
             });
             if (recorder.last) opts.push(['recording', `Last recording (${recorder.last.name})`]);
-            sel.innerHTML = '';
-            opts.forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
             if (!opts.some(([v]) => v === state.frameSource)) state.frameSource = 'program';
-            sel.value = state.frameSource;
+            options(q('frameSource'), opts, state.frameSource);
         }
 
-        function fillModels() {
-            const sel = q('model');
-            const list = MINIMAX_MODELS[state.mode];
+        function fillVideoSources() {
+            videos = editableVideos();
+            if (localVideo) videos.push({ id: 'local', label: `File: ${localVideo.name}`, file: localVideo });
+            const opts = videos.map(v => [v.id, v.label]);
+            opts.push(['pick', 'Choose a video file…']);
+            if (!videos.some(v => v.id === state.videoSource)) state.videoSource = videos[0]?.id || 'pick';
+            options(q('videoSource'), opts, state.videoSource);
+            showSourcePreview();
+        }
+
+        function showSourcePreview() {
+            const v = videos.find(x => x.id === state.videoSource);
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            previewUrl = v ? URL.createObjectURL(v.file) : null;
+            srcPreview.hidden = !v;
+            q('video-note').textContent = v ? '' : 'Record something, add a Media Source, or choose a file.';
+            if (!v) { srcPreview.removeAttribute('src'); return; }
+            srcPreview.src = previewUrl;
+            srcPreview.onloadedmetadata = () => {
+                const d = srcPreview.duration;
+                q('video-note').textContent = isFinite(d) && d > H3.maxSourceSeconds
+                    ? `This clip is ${Math.round(d)} s long; H3 accepts source videos up to ${H3.maxSourceSeconds} s.`
+                    : `${(v.file.size / 1048576).toFixed(1)} MB`;
+            };
+        }
+
+        function fillHailuoModels() {
+            const mode = state.mode === 't2v' ? 't2v' : 'i2v';
+            const list = HAILUO_MODELS[mode];
             if (!list.some(m => m.id === state.model)) state.model = list[0]?.id;
-            sel.innerHTML = '';
-            list.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; sel.appendChild(o); });
-            sel.value = state.model;
-            const { durations, defaultDuration } = modelOptions(state.mode, state.model);
+            options(q('model'), list.map(m => [m.id, m.name]), state.model);
+            const { durations, defaultDuration } = hailuoOptions(mode, state.model);
             q('duration-row').hidden = !durations.length;
-            const dsel = q('duration');
-            dsel.innerHTML = durations.map(d => `<option value="${d}">${d} s</option>`).join('');
             if (!durations.includes(state.duration)) state.duration = defaultDuration;
-            if (durations.length) dsel.value = state.duration;
+            options(q('duration'), durations.map(d => [d, `${d} s`]), state.duration);
         }
 
         async function refreshFrame() {
@@ -1425,11 +1531,35 @@ export function ObsStudio() {
             refreshFrame();
         }
 
+        const loadFrame = () => (state.frameSource === 'recording' ? seekRecording() : refreshFrame());
+
         function sync() {
+            if (state.mode === 'edit') state.provider = 'h3';
+            const h3 = state.provider === 'h3';
+            const needsFrame = state.mode === 'i2v' || (state.mode === 'edit' && state.useRef);
             modal.body.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === state.mode));
-            q('frame-block').hidden = state.mode !== 'i2v';
+            q('provider-row').hidden = state.mode === 'edit';
+            q('provider').value = state.provider;
+            q('key-row').hidden = !h3 || !!getMinimaxKey();
+            q('video-block').hidden = state.mode !== 'edit';
+            q('frame-block').hidden = !needsFrame;
+            q('frame-label').firstChild.textContent = state.mode === 'edit' ? 'Reference image from' : 'Start frame';
             q('recording-block').hidden = state.frameSource !== 'recording';
-            fillModels();
+            q('useRef').checked = state.useRef;
+            q('h3-opts').hidden = !h3;
+            q('hailuo-opts').hidden = h3;
+            q('prompt-label').textContent = state.mode === 'edit' ? 'Edit instruction' : 'Prompt';
+            q('prompt').placeholder = state.mode === 'edit'
+                ? 'Example: Replace the background with a snowy street at night. Keep the person, their movement and the camera framing.'
+                : 'Describe the shot: subject, action, camera move, mood, sound.';
+            q('footnote').textContent = h3
+                ? 'H3 output: 24 fps with generated stereo audio. The clip is added to the current scene when ready; this can take several minutes. Uses your MiniMax credits.'
+                : 'The clip is added to the current scene when ready. Uses your Muapi credits.';
+            q('h3Resolution').value = state.h3Resolution;
+            q('h3Duration').value = state.h3Duration;
+            q('h3Ratio').value = state.h3Ratio;
+            if (!h3) fillHailuoModels();
+            if (needsFrame && !frameCanvas) loadFrame();
         }
 
         renderJobs = () => {
@@ -1440,7 +1570,7 @@ export function ObsStudio() {
                 const li = document.createElement('li');
                 li.className = j.stage === 'Failed' ? 'failed' : j.stage === 'Done' ? 'done' : 'running';
                 li.innerHTML = '<span class="obs-mm-job-label"></span><span class="obs-mm-job-stage"></span>';
-                li.querySelector('.obs-mm-job-label').textContent = j.label;
+                li.querySelector('.obs-mm-job-label').textContent = `[${j.tag}] ${j.label}`;
                 li.querySelector('.obs-mm-job-stage').textContent = j.error ? `Failed: ${j.error}` : j.stage;
                 if (j.url) {
                     const a = document.createElement('a');
@@ -1455,51 +1585,86 @@ export function ObsStudio() {
         };
 
         modal.body.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { state.mode = b.dataset.mode; sync(); }; });
-        q('frameSource').onchange = (e) => {
-            state.frameSource = e.target.value;
+        q('provider').onchange = (e) => { state.provider = e.target.value; sync(); };
+        q('save-key').onclick = () => {
+            const key = q('key').value.trim();
+            if (!key) return;
+            setMinimaxKey(key);
             sync();
-            if (state.frameSource === 'recording') seekRecording(); else refreshFrame();
         };
+        q('videoSource').onchange = (e) => {
+            if (e.target.value !== 'pick') { state.videoSource = e.target.value; showSourcePreview(); return; }
+            e.target.value = state.videoSource;
+            const f = document.createElement('input');
+            f.type = 'file';
+            f.accept = 'video/mp4,video/quicktime,video/webm,video/x-matroska,video/x-msvideo,.mkv,.avi';
+            f.onchange = () => {
+                if (!f.files[0]) return;
+                localVideo = f.files[0];
+                state.videoSource = 'local';
+                fillVideoSources();
+            };
+            f.click();
+        };
+        q('useRef').onchange = (e) => { state.useRef = e.target.checked; sync(); };
+        q('frameSource').onchange = (e) => { state.frameSource = e.target.value; sync(); loadFrame(); };
         q('recTime').onchange = seekRecording;
-        q('refresh').onclick = () => (state.frameSource === 'recording' ? seekRecording() : refreshFrame());
+        q('refresh').onclick = loadFrame;
         q('prompt').value = state.prompt;
         q('prompt').oninput = (e) => { state.prompt = e.target.value; };
-        q('model').onchange = (e) => { state.model = e.target.value; fillModels(); };
+        q('model').onchange = (e) => { state.model = e.target.value; fillHailuoModels(); };
         q('duration').onchange = (e) => { state.duration = +e.target.value; };
+        q('h3Resolution').onchange = (e) => { state.h3Resolution = e.target.value; };
+        q('h3Duration').onchange = (e) => {
+            state.h3Duration = Math.min(H3.maxDuration, Math.max(H3.minDuration, Math.round(+e.target.value) || H3.minDuration));
+            e.target.value = state.h3Duration;
+        };
+        q('h3Ratio').onchange = (e) => { state.h3Ratio = e.target.value; };
         q('generate').onclick = async () => {
             const prompt = state.prompt.trim();
-            if (state.mode === 't2v' && !prompt) { toast('Write a prompt first'); return; }
+            const h3 = state.provider === 'h3';
+            if (!prompt) { toast(state.mode === 'edit' ? 'Describe the edit first' : 'Write a prompt first'); return; }
+            if (h3 && prompt.length > H3.maxPrompt) { toast(`Prompt is longer than ${H3.maxPrompt} characters`); return; }
             if (state.mode === 'i2v' && !frameCanvas) { toast('No start frame captured'); return; }
-            if (!localStorage.getItem('muapi_key')) {
+            if (state.mode === 'edit' && state.useRef && !frameCanvas) { toast('No reference image captured'); return; }
+            const video = videos.find(v => v.id === state.videoSource);
+            if (state.mode === 'edit' && !video) { toast('Choose a source video'); return; }
+            if (h3 && !getMinimaxKey()) { toast('Save your MiniMax API key first'); sync(); return; }
+            if (!h3 && !localStorage.getItem('muapi_key')) {
                 // The key dialog sits under OBS modals, so close this one and come back after.
                 modal.close();
-                AuthModal(() => openMinimax(state));
+                AuthModal(() => openMinimax({ ...state, localVideo }));
                 return;
             }
-            const { resolutions } = modelOptions(state.mode, state.model);
+            const frame = (state.mode === 'i2v' || (state.mode === 'edit' && state.useRef)) ? await frameToFile(frameCanvas, 'obs-frame') : null;
             startJob({
+                provider: state.provider,
                 mode: state.mode,
-                model: state.model,
                 prompt,
-                duration: q('duration-row').hidden ? undefined : state.duration,
-                resolution: resolutions[0],
-                frame: state.mode === 'i2v' ? await frameToFile(frameCanvas, 'obs-frame') : null,
                 sceneId,
+                // H3
+                resolution: state.h3Resolution,
+                duration: h3 ? state.h3Duration : (q('duration-row').hidden ? undefined : state.duration),
+                ratio: state.h3Ratio,
+                sourceVideo: video?.file,
+                referenceImage: state.mode === 'edit' ? frame : null,
+                frame: state.mode === 'i2v' ? frame : null,
+                // Hailuo
+                model: state.model,
             });
         };
         const observer = new MutationObserver(() => {
-            if (!modal.body.isConnected) {
-                if (recUrl) URL.revokeObjectURL(recUrl);
-                observer.disconnect();
-            }
+            if (modal.body.isConnected) return;
+            urls.forEach(u => URL.revokeObjectURL(u));
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            observer.disconnect();
         });
         observer.observe(document.body, { childList: true });
 
         fillFrameSources();
+        fillVideoSources();
         sync();
         renderJobs();
-        if (state.frameSource === 'recording') recVideo.addEventListener('loadedmetadata', seekRecording, { once: true });
-        else refreshFrame();
     }
 
     // ---------- Generic UI helpers ----------
@@ -1620,6 +1785,7 @@ export function ObsStudio() {
     if (col.settings.micEnabled) root.addEventListener('pointerdown', () => setMic(true), { once: true });
     setStudioMode(false);
     setClock();
+    resumePendingTasks();
     updateOutputButtons();
 
     root._cleanup = () => {
