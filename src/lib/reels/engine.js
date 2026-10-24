@@ -7,6 +7,30 @@ import { REEL, FILTERS, TEXT_STYLES, clipDuration, layout, getMedia } from './st
 
 const TRANSITION_SECONDS = 0.5;
 
+// Camera movement templates: given progress p (0..1) through the clip,
+// return a transform { x, y, scale, rotate } in canvas-fraction units,
+// applied around the frame center (Ken Burns-style pans/zooms).
+const MOTION_FX = {
+    none: () => ({}),
+    zoomIn: (p) => ({ scale: 1 + 0.18 * p }),
+    zoomOut: (p) => ({ scale: 1.18 - 0.18 * p }),
+    pushIn: (p) => ({ scale: 1 + 0.35 * p }),
+    pullOut: (p) => ({ scale: 1.35 - 0.35 * p }),
+    kenBurns: (p) => ({ scale: 1.08 + 0.14 * p, x: 0.045 * (1 - p), y: -0.035 * (1 - p) }),
+    panLeft: (p) => ({ scale: 1.14, x: 0.07 - 0.14 * p }),
+    panRight: (p) => ({ scale: 1.14, x: -0.07 + 0.14 * p }),
+    panUp: (p) => ({ scale: 1.14, y: 0.07 - 0.14 * p }),
+    panDown: (p) => ({ scale: 1.14, y: -0.07 + 0.14 * p }),
+    shake: (p) => ({
+        scale: 1.05,
+        x: 0.012 * Math.sin(p * 47) + 0.006 * Math.sin(p * 101 + 1.3),
+        y: 0.012 * Math.cos(p * 53 + 0.7) + 0.006 * Math.sin(p * 89 + 2.1),
+        rotate: 0.01 * Math.sin(p * 37 + 0.4),
+    }),
+    orbit: (p) => ({ scale: 1.16, x: 0.05 * Math.cos(p * Math.PI * 2), y: 0.05 * Math.sin(p * Math.PI * 2) }),
+    driftTilt: (p) => ({ scale: 1.1, rotate: (p - 0.5) * 0.035 }),
+};
+
 export class ReelEngine {
     constructor(canvas) {
         this.canvas = canvas;
@@ -179,7 +203,10 @@ export class ReelEngine {
 
     // ---------- Rendering ----------
 
-    drawClip(ctx, clip, alpha = 1, transform = null) {
+    // `elapsed` is seconds since this clip started (drives its camera
+    // motion template). `transform` is an extra transition-specific
+    // transform composed on top of the clip's own motion.
+    drawClip(ctx, clip, alpha = 1, elapsed = 0, transform = null, extraFilter = '') {
         const m = this.media.get(clip.mediaId);
         if (!m) return;
         const el = m.el;
@@ -193,10 +220,12 @@ export class ReelEngine {
         if (a.brightness) parts.push(`brightness(${1 + a.brightness / 100})`);
         if (a.contrast) parts.push(`contrast(${1 + a.contrast / 100})`);
         if (a.saturation) parts.push(`saturate(${1 + a.saturation / 100})`);
+        if (extraFilter) parts.push(extraFilter);
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.filter = parts.join(' ').trim() || 'none';
         if (transform) transform(ctx);
+        this.applyMotion(ctx, clip, elapsed, W, H);
         if (clip.fit === 'contain') {
             // Blurred fill behind letterboxed media, as reel editors do.
             const kc = Math.max(W / w, H / h);
@@ -206,6 +235,55 @@ export class ReelEngine {
             ctx.restore();
         }
         ctx.drawImage(el, (W - w * k) / 2, (H - h * k) / 2, w * k, h * k);
+        ctx.restore();
+    }
+
+    // Camera movement template (Ken Burns pan/zoom, shake, orbit, ...).
+    applyMotion(ctx, clip, elapsed, W, H) {
+        const fn = MOTION_FX[clip.motion];
+        if (!fn) return;
+        const dur = clipDuration(clip);
+        const p = dur > 0 ? Math.max(0, Math.min(1, elapsed / dur)) : 0;
+        const { x = 0, y = 0, scale = 1, rotate = 0 } = fn(p) || {};
+        if (!x && !y && scale === 1 && !rotate) return;
+        ctx.translate(W / 2, H / 2);
+        ctx.translate(x * W, y * H);
+        ctx.rotate(rotate);
+        ctx.scale(scale, scale);
+        ctx.translate(-W / 2, -H / 2);
+    }
+
+    // Renders a clip at a given elapsed time into an offscreen full-frame
+    // canvas, for transitions that need pixel access to the incoming clip
+    // (pixelate, glitch).
+    renderClipToTemp(clip, elapsed) {
+        if (!this.tmpFrame) {
+            this.tmpFrame = document.createElement('canvas');
+            this.tmpFrame.width = REEL.width;
+            this.tmpFrame.height = REEL.height;
+        }
+        const tctx = this.tmpFrame.getContext('2d');
+        tctx.clearRect(0, 0, REEL.width, REEL.height);
+        this.drawClip(tctx, clip, 1, elapsed);
+        return this.tmpFrame;
+    }
+
+    // Downsamples then upscales `src` without smoothing, for a blocky
+    // pixelation whose strength is `amt` (0 = sharp, 1 = coarsest).
+    drawPixelated(ctx, src, amt) {
+        const W = REEL.width, H = REEL.height;
+        if (amt < 0.03) { ctx.drawImage(src, 0, 0); return; }
+        const cell = Math.max(1, Math.round(amt * 48));
+        const sw = Math.max(1, Math.round(W / cell)), sh = Math.max(1, Math.round(H / cell));
+        if (!this.pixelTmp) this.pixelTmp = document.createElement('canvas');
+        const t = this.pixelTmp;
+        t.width = sw; t.height = sh;
+        const tctx = t.getContext('2d');
+        tctx.imageSmoothingEnabled = true;
+        tctx.drawImage(src, 0, 0, sw, sh);
+        ctx.save();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(t, 0, 0, W, H);
         ctx.restore();
     }
 
@@ -220,9 +298,9 @@ export class ReelEngine {
             const local = t - at.start;
             const inTransition = at.index > 0 && at.clip.transition !== 'none' && local < TRANSITION_SECONDS;
             if (inTransition) {
-                this.drawTransition(ctx, at.clip, local / TRANSITION_SECONDS);
+                this.drawTransition(ctx, at.clip, local / TRANSITION_SECONDS, local);
             } else {
-                this.drawClip(ctx, at.clip);
+                this.drawClip(ctx, at.clip, 1, local);
                 // Keep the latest frame for the next clip's transition.
                 this.prevFrame.getContext('2d').drawImage(this.canvas, 0, 0);
             }
@@ -232,18 +310,18 @@ export class ReelEngine {
         }
     }
 
-    drawTransition(ctx, clip, p) {
+    drawTransition(ctx, clip, p, elapsed) {
         const W = REEL.width, H = REEL.height;
         const e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
         const prev = this.prevFrame;
         switch (clip.transition) {
             case 'fade':
                 ctx.drawImage(prev, 0, 0);
-                this.drawClip(ctx, clip, e);
+                this.drawClip(ctx, clip, e, elapsed);
                 break;
             case 'black':
             case 'white':
-                if (p < 0.5) ctx.drawImage(prev, 0, 0); else this.drawClip(ctx, clip);
+                if (p < 0.5) ctx.drawImage(prev, 0, 0); else this.drawClip(ctx, clip, 1, elapsed);
                 ctx.globalAlpha = p < 0.5 ? p * 2 : (1 - p) * 2;
                 ctx.fillStyle = clip.transition === 'black' ? '#000' : '#fff';
                 ctx.fillRect(0, 0, W, H);
@@ -251,19 +329,100 @@ export class ReelEngine {
                 break;
             case 'slide':
                 ctx.drawImage(prev, -W * e, 0);
-                this.drawClip(ctx, clip, 1, (c) => c.translate(W * (1 - e), 0));
+                this.drawClip(ctx, clip, 1, elapsed, (c) => c.translate(W * (1 - e), 0));
                 break;
             case 'zoom':
                 ctx.drawImage(prev, 0, 0);
-                this.drawClip(ctx, clip, e, (c) => {
+                this.drawClip(ctx, clip, e, elapsed, (c) => {
                     const s = 1.3 - 0.3 * e;
                     c.translate(W / 2, H / 2);
                     c.scale(s, s);
                     c.translate(-W / 2, -H / 2);
                 });
                 break;
+            case 'wipeLeft':
+            case 'wipeRight':
+            case 'wipeUp':
+            case 'wipeDown': {
+                ctx.drawImage(prev, 0, 0);
+                ctx.save();
+                ctx.beginPath();
+                if (clip.transition === 'wipeLeft') ctx.rect(0, 0, W * p, H);
+                else if (clip.transition === 'wipeRight') ctx.rect(W - W * p, 0, W * p, H);
+                else if (clip.transition === 'wipeUp') ctx.rect(0, H - H * p, W, H * p);
+                else ctx.rect(0, 0, W, H * p);
+                ctx.clip();
+                this.drawClip(ctx, clip, 1, elapsed);
+                ctx.restore();
+                break;
+            }
+            case 'circle': {
+                ctx.drawImage(prev, 0, 0);
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(W / 2, H / 2, p * Math.hypot(W, H) / 1.6, 0, Math.PI * 2);
+                ctx.clip();
+                this.drawClip(ctx, clip, 1, elapsed);
+                ctx.restore();
+                break;
+            }
+            case 'spin':
+                ctx.drawImage(prev, 0, 0);
+                this.drawClip(ctx, clip, e, elapsed, (c) => {
+                    c.translate(W / 2, H / 2);
+                    c.rotate((1 - e) * Math.PI * 0.5);
+                    c.scale(0.4 + 0.6 * e, 0.4 + 0.6 * e);
+                    c.translate(-W / 2, -H / 2);
+                });
+                break;
+            case 'flip': {
+                const half = p < 0.5;
+                const q = half ? p * 2 : (p - 0.5) * 2;
+                const scaleX = Math.max(0.02, half ? 1 - q : q);
+                ctx.save();
+                ctx.translate(W / 2, 0);
+                ctx.scale(scaleX, 1);
+                ctx.translate(-W / 2, 0);
+                if (half) ctx.drawImage(prev, 0, 0); else this.drawClip(ctx, clip, 1, elapsed);
+                ctx.restore();
+                break;
+            }
+            case 'blur': {
+                ctx.save();
+                ctx.filter = `blur(${e * 14}px)`;
+                ctx.globalAlpha = 1 - e;
+                ctx.drawImage(prev, 0, 0);
+                ctx.restore();
+                this.drawClip(ctx, clip, e, elapsed, null, `blur(${(1 - e) * 14}px)`);
+                break;
+            }
+            case 'pixelate': {
+                const amt = p < 0.5 ? p * 2 : (1 - p) * 2;
+                const src = p < 0.5 ? prev : this.renderClipToTemp(clip, elapsed);
+                this.drawPixelated(ctx, src, amt);
+                break;
+            }
+            case 'glitch': {
+                const amt = Math.sin(p * Math.PI);
+                const src = p < 0.5 ? prev : this.renderClipToTemp(clip, elapsed);
+                ctx.drawImage(src, 0, 0);
+                if (amt > 0.05) {
+                    const slices = 10, sliceH = H / slices;
+                    for (let i = 0; i < slices; i++) {
+                        const y = i * sliceH;
+                        const dx = Math.sin(i * 12.9 + p * 40) * amt * 40;
+                        ctx.drawImage(src, 0, y, W, sliceH, dx, y, W, sliceH);
+                    }
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'lighten';
+                    ctx.globalAlpha = amt * 0.5;
+                    ctx.drawImage(src, amt * 10, 0);
+                    ctx.restore();
+                }
+                break;
+            }
             default:
-                this.drawClip(ctx, clip);
+                this.drawClip(ctx, clip, 1, elapsed);
         }
     }
 

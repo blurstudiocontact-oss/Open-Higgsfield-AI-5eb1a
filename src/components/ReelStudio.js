@@ -1,5 +1,5 @@
 import {
-    REEL, FILTERS, TRANSITIONS, TEXT_STYLES, TEXT_ANIMS, uid, loadProject, saveProject, newProject,
+    REEL, FILTERS, TRANSITIONS, MOTIONS, TEXT_STYLES, TEXT_ANIMS, uid, loadProject, saveProject, newProject,
     makeClip, clipDuration, layout, addMedia, getMedia,
 } from '../lib/reels/store.js';
 import { ReelEngine, thumbnails, exportFormats } from '../lib/reels/engine.js';
@@ -23,6 +23,7 @@ const ICON = {
     filter: '<circle cx="9" cy="9" r="6"/><circle cx="15" cy="15" r="6"/>',
     adjust: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
     transition: '<rect x="3" y="6" width="7" height="12" rx="1"/><rect x="14" y="6" width="7" height="12" rx="1"/><path d="M10 12h4"/>',
+    motion: '<path d="M3 12h7M3 12l3-3M3 12l3 3M21 12h-7M21 12l-3-3M21 12l-3 3"/><circle cx="12" cy="12" r="2"/>',
     fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
     left: '<path d="M15 18l-6-6 6-6"/>',
@@ -365,6 +366,7 @@ export function ReelStudio() {
                 ...(clip.kind !== 'image' ? [['volume', 'Volume', () => openSheet('volume')]] : []),
                 ['filter', 'Filters', () => openSheet('filters')],
                 ['adjust', 'Adjust', () => openSheet('adjust')],
+                ['motion', 'Motion', () => openSheet('motion')],
                 ['transition', 'Transition', () => openSheet('transition')],
                 ['fit', clip.fit === 'cover' ? 'Fit' : 'Fill', () => { clip.fit = clip.fit === 'cover' ? 'contain' : 'cover'; refresh(); }],
                 ['ai', clip.kind === 'image' ? 'Animate' : 'AI edit', () => openAi(clip.kind === 'image' ? 'animate' : 'edit'), 'reel-ai'],
@@ -494,6 +496,10 @@ export function ReelStudio() {
                 title('Adjust');
                 ['brightness', 'contrast', 'saturation'].forEach(k =>
                     slider(k[0].toUpperCase() + k.slice(1), -100, 100, 1, clip.adjust[k], v => `${v > 0 ? '+' : ''}${v}`, v => { clip.adjust[k] = v; engine.render(engine.t); persist(); }));
+                break;
+            case 'motion':
+                title('Camera movement');
+                chips(Object.entries(MOTIONS), clip.motion, (v) => { clip.motion = v; engine.render(engine.t); persist(); });
                 break;
             case 'transition':
                 title('Transition into this clip');

@@ -18,6 +18,19 @@ export const FILTERS = {
     fade: { label: 'Fade', css: 'contrast(0.8) brightness(1.1) saturate(0.8)' },
     drama: { label: 'Drama', css: 'contrast(1.4) saturate(0.9) brightness(0.9)' },
     dream: { label: 'Dream', css: 'blur(0.6px) brightness(1.15) saturate(1.2)' },
+    // Cinematic / LUT-style render filters.
+    cinematic: { label: 'Cinematic', css: 'contrast(1.2) saturate(1.1) brightness(0.95) sepia(0.08)' },
+    teal: { label: 'Teal & Orange', css: 'saturate(1.35) contrast(1.15) hue-rotate(-6deg) brightness(1.02)' },
+    noir: { label: 'Noir', css: 'grayscale(1) contrast(1.5) brightness(0.85)' },
+    golden: { label: 'Golden Hour', css: 'sepia(0.35) saturate(1.4) brightness(1.08) hue-rotate(-8deg)' },
+    matte: { label: 'Matte', css: 'contrast(0.85) saturate(0.9) brightness(1.08)' },
+    moody: { label: 'Moody', css: 'contrast(1.25) saturate(0.75) brightness(0.88) hue-rotate(8deg)' },
+    cyber: { label: 'Cyberpunk', css: 'saturate(1.6) contrast(1.3) hue-rotate(185deg) brightness(1.05)' },
+    infrared: { label: 'Infrared', css: 'saturate(2) hue-rotate(260deg) contrast(1.2)' },
+    polaroid: { label: 'Polaroid', css: 'sepia(0.3) saturate(1.1) contrast(0.95) brightness(1.1)' },
+    vhs: { label: 'VHS', css: 'saturate(1.3) contrast(1.1) brightness(1.05) hue-rotate(-3deg) blur(0.3px)' },
+    clean: { label: 'Clean', css: 'contrast(1.05) saturate(1.05) brightness(1.03)' },
+    mono: { label: 'Mono Blue', css: 'grayscale(0.8) sepia(0.2) hue-rotate(170deg) contrast(1.2)' },
 };
 
 export const TRANSITIONS = {
@@ -27,6 +40,34 @@ export const TRANSITIONS = {
     white: 'Flash',
     slide: 'Slide',
     zoom: 'Zoom in',
+    wipeLeft: 'Wipe left',
+    wipeRight: 'Wipe right',
+    wipeUp: 'Wipe up',
+    wipeDown: 'Wipe down',
+    circle: 'Iris',
+    spin: 'Spin',
+    flip: 'Flip',
+    blur: 'Blur dissolve',
+    pixelate: 'Pixelate',
+    glitch: 'Glitch',
+};
+
+// Camera movement templates applied over a clip's own duration (Ken
+// Burns-style pans/zooms), independent of the cut transition above.
+export const MOTIONS = {
+    none: 'None',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    pushIn: 'Push in (fast)',
+    pullOut: 'Pull out (fast)',
+    kenBurns: 'Ken Burns',
+    panLeft: 'Pan left',
+    panRight: 'Pan right',
+    panUp: 'Pan up',
+    panDown: 'Pan down',
+    shake: 'Handheld shake',
+    orbit: 'Orbit',
+    driftTilt: 'Drift tilt',
 };
 
 export const TEXT_STYLES = {
@@ -64,7 +105,7 @@ export function makeClip(media, extra = {}) {
         id: uid('clip'), mediaId: media.id, kind: media.kind,
         in: 0, out: dur, speed: 1, volume: 1, filter: 'none',
         adjust: { brightness: 0, contrast: 0, saturation: 0 },
-        transition: 'none', fit: 'cover', ...extra,
+        transition: 'none', motion: 'none', fit: 'cover', ...extra,
     };
 }
 
