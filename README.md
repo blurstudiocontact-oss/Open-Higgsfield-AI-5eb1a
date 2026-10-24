@@ -88,7 +88,7 @@ npm run build
 npm run preview
 ```
 
-In production the browser calls `https://api.minimax.io` directly. If the API refuses browser requests (CORS), point the app at your own proxy with **OBS Studio → Settings → MiniMax → API base URL**.
+The browser calls MiniMax through same-origin proxy paths (`/minimax-api`, `/minimax-cdn`), served by the Vite dev server and, on Netlify, by `netlify.toml`. On any other host, add the same two proxies or set **OBS Studio → Settings → MiniMax → API base URL**.
 
 ## 🏗️ Architecture
 

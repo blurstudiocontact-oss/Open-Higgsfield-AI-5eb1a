@@ -77,8 +77,8 @@ A small MiniMax catalog (`t2iModels`, `i2iModels`, `t2vModels`, `i2vModels`) who
 
 ## 5. Development Setup
 
-- **Vite Proxy:** Local development proxies `/minimax-api` to `https://api.minimax.io` and `/minimax-cdn` to the H3 result CDN, to avoid CORS.
-- **Environment:** `minimax.js` uses the proxy paths when `import.meta.env.DEV` is true, the real host in production, or a custom base URL saved in OBS Studio → Settings → MiniMax.
+- **Proxies:** `/minimax-api` → `https://api.minimax.io` and `/minimax-cdn` → the H3 result CDN, served by Vite in development (`vite.config.js`) and by Netlify in production (`netlify.toml`), to avoid CORS.
+- **Environment:** `minimax.js` always uses the proxy paths, unless a custom base URL is saved in OBS Studio → Settings → MiniMax.
 
 ## 6. Known Gotchas & Fixes
 

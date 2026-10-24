@@ -20,10 +20,11 @@ export const H3 = {
 
 const KEY_STORAGE = 'minimax_key';
 const BASE_STORAGE = 'minimax_base_url';
-const DEFAULT_BASE = 'https://api.minimax.io';
-// In development Vite proxies these paths, which avoids CORS on the API and CDN.
-const DEV_API = '/minimax-api';
-const DEV_CDN = { host: 'video-product.cdn.minimax.io', path: '/minimax-cdn' };
+// Same-origin proxy paths, served by the Vite dev server (vite.config.js) and
+// by Netlify (netlify.toml), which avoids CORS on the API and CDN. Hosts
+// without these proxies need an API base URL set in OBS Settings → MiniMax.
+const PROXY_API = '/minimax-api';
+const PROXY_CDN = { host: 'video-product.cdn.minimax.io', path: '/minimax-cdn' };
 // Uploads that come back without a public URL are referenced by file id.
 const FILE_SCHEME = 'minimax-file://';
 
@@ -34,16 +35,15 @@ export const setMinimaxBase = (url) => (url ? localStorage.setItem(BASE_STORAGE,
 
 function apiBase() {
     const custom = getMinimaxBase().replace(/\/+$/, '');
-    if (custom) return custom;
-    return import.meta.env.DEV ? DEV_API : DEFAULT_BASE;
+    return custom || PROXY_API;
 }
 
-// Generated videos are served from MiniMax's CDN; route them through the dev proxy too.
+// Generated videos are served from MiniMax's CDN; route them through the proxy too.
 export function clipFetchUrl(url) {
-    if (!import.meta.env.DEV || getMinimaxBase()) return url;
+    if (getMinimaxBase()) return url;
     try {
         const u = new URL(url);
-        if (u.host === DEV_CDN.host) return `${DEV_CDN.path}${u.pathname}${u.search}`;
+        if (u.host === PROXY_CDN.host) return `${PROXY_CDN.path}${u.pathname}${u.search}`;
     } catch { /* not a URL */ }
     return url;
 }

@@ -89,8 +89,8 @@ Browser access (CORS):
 
 - In development, Vite proxies `/minimax-api` to `api.minimax.io` and
   `/minimax-cdn` to `video-product.cdn.minimax.io`.
-- In production, requests go straight to `https://api.minimax.io` unless an
-  API base URL (your own proxy) is set in Settings.
+- On Netlify, `netlify.toml` serves the same two proxies. Other hosts need
+  them too, or an API base URL set in Settings.
 - None of this was tested against the real API.
 
 ## Daydream Scope (extension, not part of OBS)
