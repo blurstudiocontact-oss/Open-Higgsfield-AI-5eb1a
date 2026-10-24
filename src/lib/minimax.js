@@ -132,6 +132,65 @@ async function generateImages({ model, prompt, aspect_ratio, subjectReference, n
     return { id: data.id, url: urls[0], urls };
 }
 
+// ---------- Audio and text (Creative page) ----------
+// Shapes follow platform.minimax.io: T2A v2, Music Generation, Voice Design
+// and Chat Completion v2. Audio comes back hex-encoded.
+
+const hexToBlob = (hex, type = 'audio/mpeg') => {
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return new Blob([bytes], { type });
+};
+
+export async function synthesizeSpeech({ text, model = 'speech-02-hd', voiceId, languageBoost }) {
+    const body = {
+        model, text, stream: false,
+        voice_setting: { voice_id: voiceId || 'English_expressive_narrator', speed: 1, vol: 1, pitch: 0 },
+        audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 },
+    };
+    if (languageBoost) body.language_boost = languageBoost;
+    const data = await postJson('/v1/t2a_v2', body);
+    if (!data.data?.audio) throw new Error('MiniMax returned no audio');
+    return hexToBlob(data.data.audio);
+}
+
+export async function generateMusic({ prompt, lyrics, model = 'music-2.0' }) {
+    const body = { model, prompt, audio_setting: { sample_rate: 44100, bitrate: 256000, format: 'mp3' } };
+    if (lyrics) body.lyrics = lyrics;
+    const data = await postJson('/v1/music_generation', body);
+    if (!data.data?.audio) throw new Error('MiniMax returned no music');
+    return hexToBlob(data.data.audio);
+}
+
+export async function designVoice({ prompt, previewText }) {
+    const data = await postJson('/v1/voice_design', { prompt, preview_text: previewText || 'Hello! This is a preview of my new voice.' });
+    if (!data.voice_id) throw new Error('MiniMax returned no voice');
+    return { voiceId: data.voice_id, audio: data.trial_audio ? hexToBlob(data.trial_audio) : null };
+}
+
+export async function listSystemVoices() {
+    const data = await postJson('/v1/get_voice', { voice_type: 'all' });
+    const rows = [...(data.system_voice || []), ...(data.voice_generation || []), ...(data.voice_cloning || [])];
+    return rows.map(v => ({
+        id: v.voice_id,
+        name: v.voice_name || v.voice_id,
+        description: Array.isArray(v.description) ? v.description.join(' ') : (v.description || ''),
+        backend: 'minimax',
+    }));
+}
+
+export async function chat({ model = 'MiniMax-M2', messages, temperature = 0.7, maxTokens }) {
+    const body = { model, messages, temperature };
+    if (maxTokens) body.max_tokens = maxTokens;
+    const data = await postJson('/v1/text/chatcompletion_v2', body);
+    const content = data.choices?.[0]?.message?.content;
+    if (content == null) throw new Error('MiniMax returned no text');
+    // Reasoning models may prefix their answer with a <think> block.
+    return content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+}
+
+export { generateImages };
+
 // ---------- Files ----------
 
 export async function uploadToMinimax(file) {

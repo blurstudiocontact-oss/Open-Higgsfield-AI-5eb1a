@@ -26,6 +26,10 @@ function navigate(page) {
     import('./components/CinemaStudio.js').then(({ CinemaStudio }) => {
       contentArea.appendChild(CinemaStudio());
     });
+  } else if (page === 'creative') {
+    import('./components/CreativeStudio.js').then(({ CreativeStudio }) => {
+      contentArea.appendChild(CreativeStudio());
+    });
   } else if (page === 'obs') {
     import('./components/ObsStudio.js').then(({ ObsStudio }) => {
       contentArea.appendChild(ObsStudio());

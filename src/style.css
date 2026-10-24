@@ -2,6 +2,7 @@
 @import './styles/studio.css';
 @import './styles/obs.css';
 @import './styles/reels.css';
+@import './styles/creative.css';
 
 /* App-specific layout */
 #app {

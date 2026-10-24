@@ -25,7 +25,7 @@ export function Header(navigate) {
 
     const menu = document.createElement('nav');
     menu.className = 'hidden lg:flex items-center gap-6 text-[13px] font-bold text-secondary';
-    const items = ['Reels', 'Explore', 'Image', 'Video', 'Edit', 'Character', 'Contests', 'Vibe Motion', 'Cinema Studio', 'OBS Studio', 'AI Influencer', 'Apps', 'Assist', 'Community'];
+    const items = ['Reels', 'Explore', 'Image', 'Video', 'Edit', 'Character', 'Contests', 'Vibe Motion', 'Cinema Studio', 'Creative', 'OBS Studio', 'AI Influencer', 'Apps', 'Assist', 'Community'];
 
     items.forEach(item => {
         const link = document.createElement('a');
@@ -53,6 +53,7 @@ export function Header(navigate) {
             else if (item === 'Image') navigate('image');
             else if (item === 'Video') navigate('video');
             else if (item === 'Cinema Studio') navigate('cinema');
+            else if (item === 'Creative') navigate('creative');
             else if (item === 'OBS Studio') navigate('obs');
         };
 
