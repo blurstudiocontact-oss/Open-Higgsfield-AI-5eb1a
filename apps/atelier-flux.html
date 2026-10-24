@@ -1,0 +1,803 @@
+<title>Atelier Flux</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a mixing-desk split. Composer on the left like a channel strip, takes on the right like a contact sheet. */
+:root {
+  --bg: #eef0f4;
+  --panel: #ffffff;
+  --sunk: #e4e7ee;
+  --line: #d3d7e1;
+  --ink: #161922;
+  --muted: #5d6475;
+  --accent: #d9481f;
+  --accent-ink: #ffffff;
+  --ok: #1f8a5b;
+  --warn: #b26b00;
+  --bad: #c22f3a;
+  --m-image: #2f6fd6;
+  --m-video: #c2378f;
+  --m-voice: #7a4fd1;
+  --m-sfx: #b46b00;
+  --m-music: #138a8a;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --radius: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121419; --panel: #1a1d24; --sunk: #22262f; --line: #2f343f;
+    --ink: #eceef3; --muted: #9aa1b2; --accent: #ff6a3d; --accent-ink: #1a0d07;
+    --ok: #4fc58d; --warn: #f0ad3a; --bad: #ff6b74;
+    --m-image: #6ea2ff; --m-video: #f06bbd; --m-voice: #ad8bff; --m-sfx: #f0ad3a; --m-music: #3cc9c9;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121419; --panel: #1a1d24; --sunk: #22262f; --line: #2f343f;
+  --ink: #eceef3; --muted: #9aa1b2; --accent: #ff6a3d; --accent-ink: #1a0d07;
+  --ok: #4fc58d; --warn: #f0ad3a; --bad: #ff6b74;
+  --m-image: #6ea2ff; --m-video: #f06bbd; --m-voice: #ad8bff; --m-sfx: #f0ad3a; --m-music: #3cc9c9;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 32px;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1240px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.brand h1 { font: 800 clamp(26px, 4vw, 36px)/1 var(--display); letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+.brand h1 span { color: var(--accent); }
+.brand p { margin: 0; color: var(--muted); font-size: 14px; }
+.flowbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.chip { font: 500 12px/1 var(--mono); padding: 7px 10px; border-radius: 999px; background: var(--sunk); color: var(--muted); border: 1px solid var(--line); text-decoration: none; white-space: nowrap; }
+a.chip:hover { color: var(--ink); border-color: var(--muted); }
+.chip.ok { color: var(--ok); }
+.chip.bad { color: var(--bad); }
+
+.notice { border: 1px solid var(--line); border-left: 4px solid var(--warn); background: var(--panel); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.notice.bad { border-left-color: var(--bad); }
+.notice p { margin: 0; min-width: 0; flex: 1 1 280px; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.composer { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+@media (max-width: 860px) { .composer { position: static; } }
+.label { font: 600 11px/1 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > .field { flex: 1 1 140px; }
+
+.modes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; background: var(--sunk); padding: 4px; border-radius: 10px; }
+.modes button { border: 0; background: transparent; border-radius: 7px; padding: 8px 4px; font-weight: 600; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.modes button .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mc); }
+.modes button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+
+textarea, select, input[type="search"], input[type="text"] {
+  width: 100%; background: var(--sunk); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+}
+textarea { min-height: 132px; resize: vertical; line-height: 1.45; }
+.hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+.prompt-tools { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 9px; padding: 9px 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.small { padding: 6px 10px; font-size: 13px; }
+.btn.ghost { background: transparent; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions .primary { flex: 1 1 160px; }
+.cost { font: 500 13px/1.4 var(--mono); color: var(--muted); }
+.cost b { color: var(--ink); }
+
+.voice-pick { display: flex; flex-direction: column; gap: 8px; }
+.voice-current { display: flex; justify-content: space-between; gap: 8px; align-items: center; background: var(--sunk); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
+.voice-current b { display: block; }
+.voice-current small { color: var(--muted); }
+.voice-list { max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 9px; }
+.voice-list button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 8px 10px; }
+.voice-list button:last-child { border-bottom: 0; }
+.voice-list button:hover { background: var(--sunk); }
+.voice-list small { color: var(--muted); display: block; font-size: 12px; }
+
+.takes-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.takes-head h2 { margin: 0; font: 700 22px/1.1 var(--display); }
+.runs { display: flex; flex-direction: column; gap: 14px; }
+.run { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; }
+.run-head { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.run-kind { font: 600 11px/1 var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--mc); border: 1px solid currentColor; border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
+.run-prompt { flex: 1; min-width: 0; margin: 0; font-size: 14px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.run-meta { font: 400 12px/1.4 var(--mono); color: var(--muted); margin-top: 2px; }
+.status { font: 500 12px/1 var(--mono); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status.running::before { background: var(--warn); animation: pulse 1.2s infinite; }
+.status.done::before { background: var(--ok); }
+.status.failed::before { background: var(--bad); }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .status.running::before { animation: none; } }
+.takes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: 10px; padding: 12px 14px 14px; }
+.take { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; background: var(--sunk); min-width: 0; }
+.take .media { aspect-ratio: var(--ar, 1); max-width: 100%; display: grid; place-items: center; color: var(--muted); font-size: 13px; text-align: center; padding: 0; background: var(--sunk); }
+.take .media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.take .media.wave { aspect-ratio: auto; height: 84px; background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--mc) 55%, transparent) 0 3px, transparent 3px 7px); mask: linear-gradient(transparent 18%, #000 18% 82%, transparent 82%); }
+.take .media.vid { background: color-mix(in srgb, var(--mc) 14%, var(--sunk)); aspect-ratio: 16 / 9; }
+.take .links { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; background: var(--panel); border-top: 1px solid var(--line); }
+.take .links a { font-size: 12.5px; color: var(--ink); text-decoration: none; border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; }
+.take .links a:hover { border-color: var(--muted); }
+.run-err { margin: 0; padding: 12px 14px; color: var(--bad); font-size: 13.5px; overflow-wrap: anywhere; }
+.run-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 0 14px 12px; }
+.empty { border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 28px 20px; color: var(--muted); display: flex; flex-direction: column; gap: 10px; }
+.empty h3 { margin: 0; color: var(--ink); font: 700 18px/1.2 var(--display); }
+.empty ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: rot .7s linear infinite; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Atelier <span>Flux</span></h1>
+      <p>Images, vidéos, voix, bruitages et musique, générés avec ton compte ElevenLabs.</p>
+    </div>
+    <div class="flowbar" id="flowbar">
+      <span class="chip" id="conn">Connexion…</span>
+    </div>
+  </header>
+
+  <div id="notice" hidden></div>
+
+  <div class="grid">
+    <section class="panel composer" aria-labelledby="composer-title">
+      <h2 class="sr" id="composer-title">Créer</h2>
+      <div class="modes" role="group" aria-label="Type de création" id="modes"></div>
+
+      <div class="field">
+        <div class="prompt-tools">
+          <label class="label" for="prompt" id="prompt-label">Prompt</label>
+          <button class="btn small ghost" id="improve" type="button" hidden>✦ Améliorer avec Claude</button>
+        </div>
+        <textarea id="prompt" spellcheck="true"></textarea>
+        <p class="hint" id="prompt-hint"></p>
+      </div>
+
+      <div class="voice-pick" id="voice-box" hidden>
+        <span class="label">Voix</span>
+        <div class="voice-current" id="voice-current"></div>
+        <div class="row">
+          <div class="field"><label class="sr" for="voice-q">Rechercher une voix</label><input type="search" id="voice-q" placeholder="Rechercher : chaleureuse, narration…"></div>
+          <div class="field" style="flex:0 1 110px"><label class="sr" for="voice-lang">Langue</label>
+            <select id="voice-lang"><option value="fr">Français</option><option value="en">Anglais</option><option value="es">Espagnol</option><option value="de">Allemand</option><option value="it">Italien</option><option value="">Toutes</option></select></div>
+        </div>
+        <div class="voice-list" id="voice-list" hidden></div>
+      </div>
+
+      <div class="row">
+        <div class="field"><label class="label" for="model">Modèle</label><select id="model"></select></div>
+        <div class="field" style="flex:0 1 110px"><label class="label" for="count">Variantes</label><select id="count"></select></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn" id="estimate" type="button">Estimer le coût</button>
+        <button class="btn primary" id="go" type="button">Générer</button>
+      </div>
+      <p class="cost" id="cost" aria-live="polite"></p>
+    </section>
+
+    <section aria-labelledby="takes-title" style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="takes-head">
+        <h2 id="takes-title">Prises</h2>
+        <span class="hint" id="runs-count"></span>
+      </div>
+      <div class="runs" id="runs"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(() => {
+  const SERVER = "Eleven labs";
+  const KEY_RUNS = "atelier_runs_v1";
+  const KEY_FLOW = "atelier_flow_v1";
+
+  const MODES = {
+    image: {
+      label: "Image", color: "var(--m-image)", tool: "creative_generate_image",
+      counts: [1, 2, 3, 4], count: 4,
+      placeholder: "Exemple : nature morte d'un café filtre sur une table en chêne, lumière rasante du matin, 50 mm",
+      hint: "Décris le sujet, le décor, la lumière et le cadrage.",
+      models: [
+        ["gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst (par défaut)"],
+        ["gpt-image-2", "GPT Image 2 · texte, mises en page"],
+        ["gemini-3-pro-image", "Nano Banana Pro · cohérence de personnage"],
+        ["bytedance-seedream-5-pro", "Seedream 5 Pro · photoréalisme"],
+        ["flux-3-image", "FLUX 3 · 2K/4K, typographie"],
+        ["krea-3", "Krea 3 · direction artistique"],
+        ["recraft-v4.1", "Recraft V4.1"],
+        ["flux-2-pro", "FLUX.2 Pro · détail fin"],
+      ],
+    },
+    video: {
+      label: "Vidéo", color: "var(--m-video)", tool: "creative_generate_video",
+      counts: [1], count: 1,
+      placeholder: "Exemple : travelling lent au ras de l'eau dans un port breton à l'aube, mouettes, son d'ambiance",
+      hint: "Une vidéo coûte cher : estime le coût d'abord.",
+      models: [
+        ["bytedance-seedance-v2.5", "Seedance 2.5 (par défaut)"],
+        ["veo-3.1-generate-001", "Veo 3.1 · dialogues et son"],
+        ["veo-3.1-fast-generate-001", "Veo 3.1 Fast"],
+        ["kling-3-pro", "Kling 3.0 Pro · 4K, multi-plans"],
+        ["kling-4", "Kling 4.0"],
+        ["runway-gen4-5", "Runway Gen-4.5"],
+        ["minimax-h3", "MiniMax H3"],
+        ["wan-2.6", "Wan 2.6"],
+        ["ltx-v2-fast", "LTX 2 Fast · brouillon rapide"],
+      ],
+    },
+    voice: {
+      label: "Voix", color: "var(--m-voice)", tool: "creative_generate_speech",
+      counts: [1, 2, 3, 4], count: 2,
+      placeholder: "Exemple : Bienvenue dans l'atelier. Aujourd'hui, on fabrique un son qui tient chaud.",
+      hint: "Le texte à dire. Eleven v4 comprend les indications entre crochets, comme [chuchote] ou [rit doucement].",
+      models: [
+        ["eleven_v4", "Eleven v4 (par défaut)"],
+        ["eleven_v3", "Eleven v3"],
+        ["eleven_multilingual_v2", "Multilingual v2"],
+        ["eleven_flash_v2_5", "Flash v2.5 · rapide"],
+        ["eleven_turbo_v2_5", "Turbo v2.5"],
+      ],
+    },
+    sfx: {
+      label: "Bruitage", color: "var(--m-sfx)", tool: "creative_generate_in_flow", nodeType: "sfx",
+      counts: [1, 2, 3, 4], count: 2,
+      placeholder: "Exemple : porte en bois d'une vieille grange qui grince puis claque, écho léger",
+      hint: "Décris le son, sa matière et l'espace où il résonne.",
+      models: [["eleven_text_to_sound_v2", "Sound Effects v2"]],
+    },
+    music: {
+      label: "Musique", color: "var(--m-music)", tool: "creative_generate_in_flow", nodeType: "music",
+      counts: [1, 2, 3, 4], count: 1,
+      placeholder: "Exemple : morceau instrumental lo-fi, 85 BPM, piano feutré, contrebasse, pluie en fond, 60 secondes",
+      hint: "Style, tempo, instruments, ambiance et durée.",
+      models: [["eleven_music_v2_5", "Music v2.5"], ["eleven_music_v2", "Music v2"], ["eleven_music_v1", "Music v1"]],
+    },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+  };
+
+  let mcp = null;
+  let sample = null;
+  let mode = "image";
+  let voice = null;
+  let flow = store.get(KEY_FLOW, null);
+  let runs = store.get(KEY_RUNS, []);
+  const previews = new Map(); // generation id -> data URI (memory only)
+  const drafts = {};
+
+  // ---------- Errors ----------
+  function describe(err) {
+    const code = err && err.code;
+    switch (code) {
+      case "server_not_connected": return { text: "Le connecteur ElevenLabs n'est pas ajouté à ton compte. Ajoute-le dans claude.ai → Paramètres → Connecteurs, puis recharge la page.", page: true };
+      case "needs_reauth": return { text: "La connexion à ElevenLabs a expiré. Reconnecte-la dans claude.ai → Paramètres → Connecteurs.", page: true };
+      case "selection_required": return { text: "Tu as plusieurs connecteurs ElevenLabs : choisis-en un dans la fenêtre proposée par claude.ai, puis réessaie.", page: true };
+      case "not_in_manifest": return { text: "ElevenLabs n'est pas autorisé pour cette page. Autorise-le depuis le menu Permissions de l'artifact.", page: true };
+      case "blocked_by_policy": return { text: "La politique de ton organisation bloque cet outil ElevenLabs.", page: true };
+      case "approval_required": return { text: "Cet appel attend ton accord. Clique à nouveau pour autoriser." };
+      case "server_unavailable": return { text: "ElevenLabs ne répond pas pour l'instant. Réessaie dans un moment." };
+      case "tool_error": return { text: "ElevenLabs a refusé la demande : " + cleanMsg(err.message) };
+      case "not_granted": case "capability_disabled": case "capability_removed":
+        return { text: "Cette vue ne peut pas appeler tes connecteurs. Ouvre l'artifact dans claude.ai.", page: true };
+      default: return { text: "Échec de l'appel" + (err && err.message ? " : " + cleanMsg(err.message) : ".") };
+    }
+  }
+  function cleanMsg(m) { return String(m || "").replace(/\s+/g, " ").slice(0, 280); }
+
+  function showNotice(text, kind = "warn", action) {
+    const n = $("notice");
+    n.hidden = false;
+    n.className = "notice" + (kind === "bad" ? " bad" : "");
+    n.textContent = "";
+    const p = document.createElement("p");
+    p.textContent = text;
+    n.append(p);
+    if (action) n.append(action);
+  }
+
+  async function call(tool, input, opts) {
+    if (!mcp) throw { code: "not_granted", message: "MCP indisponible" };
+    const res = await mcp.callTool(SERVER, tool, input, opts);
+    return res;
+  }
+
+  // ---------- Composer ----------
+  function renderModes() {
+    const box = $("modes");
+    box.textContent = "";
+    for (const [key, m] of Object.entries(MODES)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.style.setProperty("--mc", m.color);
+      b.setAttribute("aria-pressed", String(key === mode));
+      b.innerHTML = '<span class="dot"></span>';
+      b.append(document.createTextNode(m.label));
+      b.onclick = () => { drafts[mode] = $("prompt").value; mode = key; renderComposer(); };
+      box.append(b);
+    }
+  }
+
+  function renderComposer() {
+    const m = MODES[mode];
+    renderModes();
+    $("prompt-label").textContent = mode === "voice" ? "Texte à dire" : "Prompt";
+    $("prompt").placeholder = m.placeholder;
+    $("prompt").value = drafts[mode] ?? m.placeholder.replace(/^Exemple : /, "");
+    $("prompt-hint").textContent = m.hint;
+    $("model").innerHTML = "";
+    m.models.forEach(([id, label]) => $("model").add(new Option(label, id)));
+    $("count").innerHTML = "";
+    m.counts.forEach(c => $("count").add(new Option(String(c), String(c), c === m.count, c === m.count)));
+    $("count").disabled = m.counts.length === 1;
+    $("voice-box").hidden = mode !== "voice";
+    $("cost").textContent = "";
+    if (mode === "voice") { renderVoice(); if (!voice && mcp) searchVoices(); }
+  }
+
+  // ---------- Voices ----------
+  function renderVoice() {
+    const box = $("voice-current");
+    box.textContent = "";
+    const d = document.createElement("div");
+    d.style.minWidth = "0";
+    const b = document.createElement("b");
+    b.textContent = voice ? voice.name : "Aucune voix choisie";
+    const s = document.createElement("small");
+    s.textContent = voice ? voice.meta : "Cherche une voix ci-dessous.";
+    d.append(b, s);
+    const btn = document.createElement("button");
+    btn.className = "btn small";
+    btn.type = "button";
+    btn.textContent = $("voice-list").hidden ? "Changer" : "Fermer";
+    btn.onclick = () => { $("voice-list").hidden = !$("voice-list").hidden; renderVoice(); if (!$("voice-list").hidden) searchVoices(); };
+    box.append(d, btn);
+  }
+
+  let voiceTimer;
+  async function searchVoices() {
+    const list = $("voice-list");
+    if (!mcp) return;
+    const input = { context: "Atelier Flux: the viewer is choosing a voice for speech." };
+    const q = $("voice-q").value.trim();
+    if (q) input.search = q;
+    if ($("voice-lang").value) input.languages = [$("voice-lang").value];
+    list.textContent = "Chargement des voix…";
+    list.style.padding = "10px";
+    try {
+      const res = await call("creative_list_voices", input, { cache: { staleTime: 600000, gcTime: 3600000 } });
+      const voices = (res.payload && res.payload.voices) || [];
+      list.style.padding = "";
+      list.textContent = "";
+      if (!voices.length) { list.textContent = "Aucune voix ne correspond."; list.style.padding = "10px"; return; }
+      voices.forEach(v => {
+        const meta = [v.labels?.gender === "female" ? "femme" : v.labels?.gender === "male" ? "homme" : null, v.labels?.accent, v.labels?.age].filter(Boolean).join(" · ");
+        const b = document.createElement("button");
+        b.type = "button";
+        const name = document.createElement("span");
+        name.textContent = v.name;
+        const small = document.createElement("small");
+        small.textContent = meta || (v.description || "").slice(0, 90);
+        b.append(name, small);
+        b.onclick = () => { voice = { id: v.voice_id, name: v.name, meta: meta || "" }; list.hidden = true; renderVoice(); };
+        list.append(b);
+      });
+      if (!voice) { const v = voices[0]; voice = { id: v.voice_id, name: v.name, meta: "Choisie par défaut, tu peux la changer." }; renderVoice(); }
+    } catch (err) {
+      list.textContent = describe(err).text;
+      list.style.padding = "10px";
+    }
+  }
+  $("voice-q").addEventListener("input", () => { clearTimeout(voiceTimer); voiceTimer = setTimeout(searchVoices, 400); });
+  $("voice-lang").addEventListener("change", searchVoices);
+
+  // ---------- Prompt improvement (Claude) ----------
+  $("improve").onclick = async () => {
+    const ta = $("prompt");
+    const text = ta.value.trim();
+    if (!text || !sample) return;
+    const btn = $("improve");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Amélioration…';
+    const kind = { image: "un modèle d'image", video: "un modèle de vidéo", voice: "une synthèse vocale (garde exactement le sens, ajoute au plus quelques indications entre crochets comme [pause] ou [chuchote])", sfx: "un générateur de bruitages", music: "un générateur de musique" }[mode];
+    try {
+      const out = await sample(
+        "Réécris ce prompt pour " + kind + ". Garde l'intention et la langue de l'utilisateur, rends-le concret et précis. Réponds uniquement par le prompt, sans guillemets ni commentaire.\n\nPrompt :\n" + text,
+        { modelTier: "quick", cache: false, onText: ({ text: t }) => { if (t) ta.value = t; } }
+      );
+      if (out && out.text) ta.value = out.text.trim();
+      drafts[mode] = ta.value;
+    } catch (err) {
+      if (err && err.code === "not_granted") btn.hidden = true;
+      else showNotice("Claude n'a pas pu améliorer le prompt" + (err && err.message ? " : " + cleanMsg(err.message) : "."));
+    }
+    btn.disabled = false;
+    btn.textContent = "✦ Améliorer avec Claude";
+  };
+
+  // ---------- Flow ----------
+  async function ensureFlow() {
+    if (flow && flow.id) return flow.id;
+    const res = await call("creative_create_flow", { context: "Atelier Flux: a canvas collecting the viewer's generations.", name: "Atelier Flux" }, { cache: false });
+    const p = res.payload || {};
+    if (!p.flow_id) throw { code: "upstream_error", message: "Aucun flow renvoyé" };
+    flow = { id: p.flow_id, url: p.url || p.flow_url || null };
+    store.set(KEY_FLOW, flow);
+    renderFlowbar();
+    return flow.id;
+  }
+
+  function renderFlowbar() {
+    const bar = $("flowbar");
+    bar.querySelectorAll("[data-flow]").forEach(e => e.remove());
+    if (flow && flow.url) {
+      const a = document.createElement("a");
+      a.className = "chip"; a.dataset.flow = "1";
+      a.href = flow.url; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "Ouvrir le canevas ↗";
+      bar.append(a);
+    }
+  }
+
+  function buildInput(estimate) {
+    const m = MODES[mode];
+    const prompt = $("prompt").value.trim();
+    const input = {
+      context: "Atelier Flux: the viewer asked for a " + m.label.toLowerCase() + " generation from this page.",
+      prompt,
+      model_id: $("model").value,
+    };
+    if (m.counts.length > 1) input.generations_count = Number($("count").value);
+    if (mode === "voice") input.voice_id = voice && voice.id;
+    if (m.nodeType) input.node_type = m.nodeType;
+    if (estimate) input.estimate_only = true;
+    return input;
+  }
+
+  function validate() {
+    if (!$("prompt").value.trim()) return "Écris d'abord un prompt.";
+    if (mode === "voice" && !voice) return "Choisis une voix.";
+    return null;
+  }
+
+  $("estimate").onclick = async () => {
+    const problem = validate();
+    if (problem) { $("cost").textContent = problem; return; }
+    const btn = $("estimate");
+    btn.disabled = true;
+    $("cost").textContent = "Estimation…";
+    try {
+      const input = buildInput(true);
+      input.flow_id = await ensureFlow();
+      const res = await call(MODES[mode].tool, input, { cache: false });
+      $("cost").innerHTML = "";
+      $("cost").append(formatCost(res.payload));
+    } catch (err) {
+      $("cost").textContent = describe(err).text;
+    }
+    btn.disabled = false;
+  };
+
+  // The estimate shape was not observed when this page was written: look for
+  // the usual credit fields and fall back to showing the reply.
+  function formatCost(p) {
+    const span = document.createElement("span");
+    const credits = findNumber(p, ["credits", "estimated_credits", "total_credits", "cost_credits"]);
+    if (credits != null) {
+      span.append("Coût estimé : ");
+      const b = document.createElement("b");
+      b.textContent = Math.round(credits).toLocaleString("fr-FR") + " crédits";
+      span.append(b);
+    } else {
+      span.textContent = "Réponse d'ElevenLabs : " + (typeof p === "string" ? p : JSON.stringify(p)).slice(0, 300);
+    }
+    return span;
+  }
+  function findNumber(obj, keys, depth = 0) {
+    if (!obj || typeof obj !== "object" || depth > 4) return null;
+    for (const k of keys) if (typeof obj[k] === "number") return obj[k];
+    for (const v of Object.values(obj)) { const r = findNumber(v, keys, depth + 1); if (r != null) return r; }
+    return null;
+  }
+
+  $("go").onclick = async () => {
+    const problem = validate();
+    if (problem) { $("cost").textContent = problem; return; }
+    const btn = $("go");
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spin"></span> Envoi…';
+    const input = buildInput(false);
+    const run = {
+      id: "r" + Date.now().toString(36), mode, prompt: input.prompt, model: input.model_id,
+      voice: mode === "voice" && voice ? voice.name : null,
+      status: "starting", startedAt: Date.now(), sessionIds: [], generations: [],
+    };
+    try {
+      input.flow_id = await ensureFlow();
+      runs.unshift(run);
+      renderRuns();
+      const res = await call(MODES[mode].tool, input, { cache: false });
+      const p = res.payload || {};
+      run.flowId = p.flow_id || input.flow_id;
+      run.url = p.url || p.flow_url || null;
+      run.sessionIds = p.session_ids || (p.session_id ? [p.session_id] : []);
+      run.pollAfter = Number(p.poll_after_seconds) || 6;
+      run.status = run.sessionIds.length ? "running" : "failed";
+      if (!run.sessionIds.length) run.error = "ElevenLabs n'a renvoyé aucune session : " + JSON.stringify(p).slice(0, 200);
+      save(); renderRuns();
+      if (run.status === "running") poll(run);
+      $("cost").textContent = "";
+    } catch (err) {
+      // A failed write may still have started; never resend it automatically.
+      run.status = "failed";
+      run.error = describe(err).text + (err && (err.code === "server_unavailable" || err.code === "upstream_error") ? " La génération a peut-être démarré : vérifie le canevas avant de relancer." : "");
+      if (!runs.includes(run)) runs.unshift(run);
+      save(); renderRuns();
+    }
+    btn.disabled = false;
+    btn.textContent = "Générer";
+  };
+
+  // ---------- Polling ----------
+  const polling = new Set();
+  async function poll(run) {
+    if (polling.has(run.id)) return;
+    polling.add(run.id);
+    let misses = 0;
+    while (run.status === "running") {
+      await new Promise(r => setTimeout(r, Math.max(3, run.pollAfter || 6) * 1000));
+      try {
+        const res = await call("creative_get_flow_run_status", { context: "Atelier Flux: checking the viewer's generation.", flow_id: run.flowId, session_ids: run.sessionIds }, { cache: false });
+        absorb(run, res.payload || {});
+        misses = 0;
+      } catch (err) {
+        if (err && err.retryable && misses < 3) { misses++; continue; }
+        run.status = "unknown";
+        run.error = describe(err).text;
+      }
+      save(); renderRuns();
+    }
+    polling.delete(run.id);
+    if (run.status === "done" || run.status === "failed") loadPreviews(run);
+  }
+
+  function absorb(run, p) {
+    const media = new Map((p.media || []).map(m => [m.generation_id, m]));
+    run.generations = (p.generations || []).map(g => {
+      const m = media.get(g.id) || {};
+      return {
+        id: g.id, status: g.status, modality: g.modality || m.kind,
+        width: g.width, height: g.height,
+        file: m.master_url || g.content_url || m.url || null,
+        page: m.generation_url || (m.product_link && m.product_link.url) || null,
+        credits: g.price && g.price.credits,
+        error: g.error || g.failure_reason || null,
+      };
+    });
+    if (p.url || p.flow_url) run.url = p.url || p.flow_url;
+    run.pollAfter = Number(p.poll_after_seconds) || run.pollAfter;
+    if (p.all_completed) run.status = p.has_failures ? "failed" : "done";
+    else if (p.has_failures && run.generations.every(g => g.status !== "pending" && g.status !== "running" && g.status !== "processing")) run.status = "failed";
+    if (run.status === "failed" && !run.error) run.error = run.generations.map(g => g.error).filter(Boolean).join(" · ") || "Une ou plusieurs variantes ont échoué.";
+    run.refreshedAt = Date.now();
+  }
+
+  // Image previews come back as image blocks from creative_get_generations;
+  // the page cannot load ElevenLabs' storage URLs itself.
+  async function loadPreviews(run) {
+    const ids = run.generations.filter(g => g.modality === "image" && g.status === "completed" && !previews.has(g.id)).map(g => g.id);
+    for (let i = 0; i < ids.length; i += 4) {
+      const chunk = ids.slice(i, i + 4);
+      try {
+        const res = await call("creative_get_generations", { context: "Atelier Flux: showing the viewer's images.", flow_id: run.flowId, generation_ids: chunk }, { cache: { staleTime: 3600000, gcTime: 86400000 } });
+        const imgs = (res.content || []).filter(b => b.type === "image" && b.data);
+        imgs.forEach((b, k) => { if (chunk[k]) previews.set(chunk[k], "data:" + (b.mimeType || "image/jpeg") + ";base64," + b.data); });
+      } catch { /* previews are optional; links remain */ }
+    }
+    renderRuns();
+  }
+
+  // Signed file links expire after about two hours: refresh finished runs on load.
+  async function refresh(run) {
+    try {
+      const res = await call("creative_get_flow_run_status", { context: "Atelier Flux: reloading the viewer's earlier generations.", flow_id: run.flowId, session_ids: run.sessionIds }, { cache: false });
+      absorb(run, res.payload || {});
+      save(); renderRuns();
+      if (run.status === "running") poll(run); else loadPreviews(run);
+    } catch { /* keep stored state */ }
+  }
+
+  function save() { store.set(KEY_RUNS, runs.slice(0, 30)); }
+
+  // ---------- Rendering ----------
+  const STATUS = { starting: ["running", "Envoi"], running: ["running", "En cours"], done: ["done", "Terminé"], failed: ["failed", "Échec"], unknown: ["", "État inconnu"] };
+
+  function renderRuns() {
+    const box = $("runs");
+    box.textContent = "";
+    $("runs-count").textContent = runs.length ? runs.length + " génération" + (runs.length > 1 ? "s" : "") : "";
+    if (!runs.length) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.innerHTML = "<h3>Tes prises apparaîtront ici</h3><ol><li>Choisis un type : image, vidéo, voix, bruitage ou musique.</li><li>Écris ton prompt (un exemple est déjà rempli).</li><li>Estime le coût si tu veux, puis clique sur Générer.</li></ol><span>Chaque création arrive aussi sur un canevas « Atelier Flux » dans ton espace ElevenLabs.</span>";
+      box.append(e);
+      return;
+    }
+    runs.forEach(run => box.append(renderRun(run)));
+  }
+
+  function renderRun(run) {
+    const m = MODES[run.mode] || MODES.image;
+    const el = document.createElement("article");
+    el.className = "run";
+    el.style.setProperty("--mc", m.color);
+
+    const head = document.createElement("div");
+    head.className = "run-head";
+    const kind = document.createElement("span");
+    kind.className = "run-kind";
+    kind.textContent = m.label;
+    const mid = document.createElement("div");
+    mid.style.flex = "1"; mid.style.minWidth = "0";
+    const p = document.createElement("p");
+    p.className = "run-prompt";
+    p.textContent = run.prompt;
+    const meta = document.createElement("div");
+    meta.className = "run-meta";
+    const credits = run.generations.reduce((s, g) => s + (g.credits || 0), 0);
+    meta.textContent = [modelName(run), run.voice, new Date(run.startedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }), credits ? Math.round(credits) + " crédits" : null].filter(Boolean).join(" · ");
+    mid.append(p, meta);
+    const st = document.createElement("span");
+    const [cls, txt] = STATUS[run.status] || STATUS.unknown;
+    st.className = "status " + cls;
+    st.textContent = txt;
+    head.append(kind, mid, st);
+    el.append(head);
+
+    if (run.error) {
+      const err = document.createElement("p");
+      err.className = "run-err";
+      err.textContent = run.error;
+      el.append(err);
+    }
+
+    const gens = run.generations.length ? run.generations : (run.status === "running" || run.status === "starting" ? Array.from({ length: run.sessionIds.length || 1 }, () => null) : []);
+    if (gens.length) {
+      const grid = document.createElement("div");
+      grid.className = "takes";
+      gens.forEach((g, i) => grid.append(renderTake(run, g, i)));
+      el.append(grid);
+    }
+
+    const foot = document.createElement("div");
+    foot.className = "run-foot";
+    if (run.url) {
+      const a = document.createElement("a");
+      a.className = "btn small"; a.href = run.url; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = "Ouvrir dans le canevas ↗";
+      foot.append(a);
+    }
+    const rm = document.createElement("button");
+    rm.className = "btn small ghost"; rm.type = "button";
+    rm.textContent = "Retirer de la liste";
+    rm.onclick = () => { runs = runs.filter(r => r !== run); save(); renderRuns(); };
+    foot.append(rm);
+    el.append(foot);
+    return el;
+  }
+
+  function renderTake(run, g, i) {
+    const t = document.createElement("div");
+    t.className = "take";
+    const media = document.createElement("div");
+    media.className = "media";
+    const modality = g ? g.modality : (run.mode === "video" ? "video" : run.mode === "image" ? "image" : "audio");
+    if (g && g.width && g.height) media.style.setProperty("--ar", g.width + " / " + g.height);
+    if (!g || (g.status !== "completed" && g.status !== "failed")) {
+      media.innerHTML = '<span class="spin"></span>';
+    } else if (g.status === "failed") {
+      media.textContent = "Variante échouée";
+    } else if (modality === "image" && previews.has(g.id)) {
+      const img = new Image();
+      img.alt = "Variante " + (i + 1) + " : " + run.prompt.slice(0, 80);
+      img.src = previews.get(g.id);
+      media.append(img);
+    } else if (modality === "video") {
+      media.classList.add("vid");
+      media.textContent = "▶ Vidéo prête";
+    } else if (modality === "audio") {
+      media.classList.add("wave");
+    } else {
+      media.textContent = "Aperçu indisponible";
+    }
+    t.append(media);
+    if (g && g.status === "completed") {
+      const links = document.createElement("div");
+      links.className = "links";
+      if (g.file) links.append(link(g.file, modality === "image" ? "Image pleine taille ↗" : modality === "video" ? "Lire la vidéo ↗" : "Écouter ↗"));
+      if (g.page) links.append(link(g.page, "Historique ↗"));
+      t.append(links);
+    }
+    return t;
+  }
+
+  function link(href, text) {
+    const a = document.createElement("a");
+    a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = text;
+    return a;
+  }
+
+  function modelName(run) {
+    const m = MODES[run.mode];
+    const hit = m && m.models.find(x => x[0] === run.model);
+    return hit ? hit[1].replace(/ \(par défaut\)| · .*/g, "") : run.model;
+  }
+
+  // ---------- Boot ----------
+  renderComposer();
+  renderRuns();
+  renderFlowbar();
+
+  (async () => {
+    const [mcpNs, sampleNs] = await Promise.all([
+      window.claude?.use ? window.claude.use("mcp") : Promise.resolve(null),
+      window.claude?.use ? window.claude.use("sample") : Promise.resolve(null),
+    ]);
+    mcp = mcpNs;
+    sample = sampleNs;
+    $("improve").hidden = !sample;
+    const conn = $("conn");
+    if (!mcp) {
+      conn.textContent = "Hors ligne";
+      conn.className = "chip bad";
+      showNotice("Cette page génère avec ton connecteur ElevenLabs, accessible seulement quand elle est ouverte dans claude.ai. Ici, tu peux préparer tes prompts, mais pas générer.", "warn");
+      $("go").disabled = true; $("estimate").disabled = true;
+      return;
+    }
+    try {
+      const list = await mcp.listTools(SERVER);
+      const s = list.servers && list.servers[0];
+      if (!s) {
+        conn.textContent = "ElevenLabs non connecté"; conn.className = "chip bad";
+        showNotice(describe({ code: "server_not_connected" }).text, "bad");
+      } else if (s.authStatus === "needs_reauth") {
+        conn.textContent = "Reconnexion requise"; conn.className = "chip bad";
+        showNotice(describe({ code: "needs_reauth" }).text, "bad");
+      } else {
+        conn.textContent = "ElevenLabs connecté"; conn.className = "chip ok";
+      }
+    } catch (err) {
+      conn.textContent = "Connexion incertaine";
+      showNotice(describe(err).text);
+    }
+    if (mode === "voice") searchVoices();
+    runs.filter(r => r.flowId && r.sessionIds && r.sessionIds.length && r.status !== "failed").forEach(refresh);
+  })();
+})();
+</script>
