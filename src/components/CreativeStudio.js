@@ -10,12 +10,17 @@ import {
 } from '../lib/creative/store.js';
 import { runNode, runWithUpstream, saveVoiceOutput } from '../lib/creative/runner.js';
 import { getElevenKey, setElevenKey, listVoices } from '../lib/creative/elevenlabs.js';
-import { getMinimaxKey, setMinimaxKey, listSystemVoices } from '../lib/minimax.js';
+import { getMinimaxKey, setMinimaxKey, listSystemVoices, chat } from '../lib/minimax.js';
+import { askAgent } from '../lib/creative/agent.js';
 
 const NODE_W = 264;
 const HEADER_H = 38;
 const PORT_GAP = 24;
 const LAST_FLOW = 'creative_last_flow';
+// New nodes land on a 40 px grid and cascade by one cell when the cell is
+// taken; focusing a selection never zooms past 1.5× (observed in the bundle).
+const PLACE_GRID = 40;
+const FOCUS_MAX_ZOOM = 1.5;
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -62,7 +67,9 @@ export function CreativeStudio() {
             <button data-tpl="podcast">Podcast intro</button>
             <button data-tpl="storyboard">Script → storyboard</button>
         </div>`);
-    stage.append(zoomBar, empty);
+    const agentPanel = h('div', 'cr-agent');
+    agentPanel.hidden = true;
+    stage.append(zoomBar, empty, agentPanel);
     body.append(palette, stage, inspector);
     root.append(topbar, body);
 
@@ -76,6 +83,7 @@ export function CreativeStudio() {
             <button class="cr-btn" data-act="assets">Assets</button>
             <button class="cr-btn" data-act="brand">Brand kits</button>
             <button class="cr-btn" data-act="settings">Settings</button>
+            <button class="cr-btn ${agentPanel.hidden ? '' : 'cr-on'}" data-act="agent">✦ Agent</button>
             <button class="cr-btn cr-primary" data-act="runall">▶ Run all</button>`;
         const name = topbar.querySelector('.cr-flow-name');
         name.onchange = () => { flow.name = name.value.trim() || 'Untitled flow'; save(); };
@@ -86,6 +94,7 @@ export function CreativeStudio() {
             else if (a === 'assets') assetsDrawer();
             else if (a === 'brand') brandKitsModal();
             else if (a === 'settings') settingsModal();
+            else if (a === 'agent') toggleAgent();
             else if (a === 'runall') runAll();
         });
     }
@@ -105,11 +114,17 @@ export function CreativeStudio() {
         localStorage.setItem(LAST_FLOW, flow.id);
         selection.clear(); selectedEdge = null;
         renderTopbar(); applyViewport(); renderAll();
+        if (!agentPanel.hidden) renderAgent();
     }
 
     // ---------- Palette ----------
+    let paletteTab = 'nodes';
     function renderPalette() {
         palette.innerHTML = '';
+        const tabs = h('div', 'cr-tabs', `<button data-t="nodes" class="${paletteTab === 'nodes' ? 'on' : ''}">Nodes</button><button data-t="structure" class="${paletteTab === 'structure' ? 'on' : ''}">Structure</button>`);
+        tabs.querySelectorAll('button').forEach(b => b.onclick = () => { paletteTab = b.dataset.t; renderPalette(); });
+        palette.append(tabs);
+        if (paletteTab === 'structure') return renderStructure();
         for (const g of GROUPS) {
             palette.append(h('div', 'cr-pal-group', esc(g)));
             for (const [type, def] of Object.entries(NODE_TYPES)) {
@@ -118,13 +133,39 @@ export function CreativeStudio() {
                 const it = h('div', 'cr-pal-item', `<span class="cr-pal-icon" style="color:${MODALITY[m]?.color}">${icon(m)}</span>${esc(def.label)}`);
                 it.draggable = true;
                 it.ondragstart = (e) => e.dataTransfer.setData('application/x-cr-node', type);
-                it.onclick = () => { const c = viewCenter(); addNode(type, c.x - NODE_W / 2, c.y - 80); };
+                it.onclick = () => {
+                    const c = viewCenter();
+                    const n = addNode(type, c.x - NODE_W / 2, c.y - 80);
+                    if (type === 'voice') voicePicker(n);
+                };
                 palette.append(it);
             }
         }
         const up = h('div', 'cr-pal-item', `<span class="cr-pal-icon">${icon('image')}</span>Upload file…`);
         up.onclick = () => pickFiles(files => addFiles(files, viewCenter()));
-        palette.insertBefore(up, palette.children[2]);
+        palette.insertBefore(up, palette.children[3]);
+    }
+
+    // Structure: groups with their members, then ungrouped nodes.
+    function renderStructure() {
+        const groups = flow.nodes.filter(n => n.type === 'flow-group');
+        const inGroup = new Set();
+        const row = (n, depth = 0) => {
+            const m = nodeOutputModality(n) || (n.type === 'comment' ? 'text' : 'image');
+            const it = h('div', `cr-pal-item cr-struct ${selection.has(n.id) ? 'on' : ''}`, `<span class="cr-pal-icon" style="color:${MODALITY[m]?.color}">${icon(m)}</span><span class="cr-struct-label">${esc(n.label)}</span><span class="cr-status cr-st-${n.run?.status || (selectedOutput(n) ? 'completed' : 'idle')}"></span>`);
+            it.style.paddingLeft = `${8 + depth * 14}px`;
+            it.onclick = () => { selection = new Set([n.id]); selectedEdge = null; renderAll(); focusNodes([n.id]); };
+            palette.append(it);
+        };
+        for (const g of groups) {
+            palette.append(h('div', 'cr-pal-group', esc(g.label)));
+            row(g);
+            groupMembers(g).forEach(m => { inGroup.add(m.id); row(m, 1); });
+        }
+        const rest = flow.nodes.filter(n => n.type !== 'flow-group' && !inGroup.has(n.id));
+        if (rest.length) palette.append(h('div', 'cr-pal-group', groups.length ? 'Ungrouped' : 'Nodes'));
+        rest.forEach(n => row(n));
+        if (!flow.nodes.length) palette.append(h('div', 'cr-dim cr-pad', 'This flow is empty.'));
     }
 
     // ---------- Viewport ----------
@@ -157,23 +198,34 @@ export function CreativeStudio() {
         v.zoom = z;
         applyViewport(); saveSoon();
     }
-    function fitView() {
-        if (!flow.nodes.length) { flow.viewport = { x: 0, y: 0, zoom: 1 }; return applyViewport(); }
-        const xs = flow.nodes.map(n => n.x), ys = flow.nodes.map(n => n.y);
-        const minX = Math.min(...xs) - 60, minY = Math.min(...ys) - 60;
-        const maxX = Math.max(...xs) + NODE_W + 60, maxY = Math.max(...ys) + 380;
-        const r = stage.getBoundingClientRect();
-        const z = Math.min(1.2, r.width / (maxX - minX), r.height / (maxY - minY));
-        flow.viewport = { zoom: z, x: (r.width - (maxX - minX) * z) / 2 - minX * z, y: (r.height - (maxY - minY) * z) / 2 - minY * z };
-        applyViewport(); save();
+    // World-space box of a node, measured from its element when rendered.
+    function nodeBox(n) {
+        const el = nodeEls.get(n.id);
+        return { x: n.x, y: n.y, w: n.w || el?.offsetWidth || NODE_W, h: n.h || el?.offsetHeight || 300 };
     }
+    function focusNodes(ids, maxZoom = FOCUS_MAX_ZOOM) {
+        const boxes = flow.nodes.filter(n => ids.includes(n.id)).map(nodeBox);
+        if (!boxes.length) { flow.viewport = { x: 0, y: 0, zoom: 1 }; return applyViewport(); }
+        const pad = 60;
+        const minX = Math.min(...boxes.map(b => b.x)) - pad, minY = Math.min(...boxes.map(b => b.y)) - pad;
+        const maxX = Math.max(...boxes.map(b => b.x + b.w)) + pad, maxY = Math.max(...boxes.map(b => b.y + b.h)) + pad;
+        const r = stage.getBoundingClientRect();
+        // Keep the floating agent panel from covering the focused nodes.
+        const usableW = r.width - (agentPanel.hidden ? 0 : agentPanel.offsetWidth + 16);
+        const z = Math.max(0.15, Math.min(maxZoom, usableW / (maxX - minX), r.height / (maxY - minY)));
+        flow.viewport = { zoom: z, x: (usableW - (maxX - minX) * z) / 2 - minX * z, y: (r.height - (maxY - minY) * z) / 2 - minY * z };
+        applyViewport(); saveSoon();
+    }
+    const fitView = () => focusNodes(flow.nodes.map(n => n.id), 1.2);
     let saveTimer;
     const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); };
 
     // ---------- Nodes ----------
     function addNode(type, x, y, extra) {
-        // Cascade instead of stacking exactly on top of another node.
-        while (flow.nodes.some(o => Math.abs(o.x - x) < 16 && Math.abs(o.y - y) < 16)) { x += 32; y += 32; }
+        // Cascade one grid cell at a time instead of stacking nodes.
+        const cell = (a, b) => `${Math.round(a / PLACE_GRID)},${Math.round(b / PLACE_GRID)}`;
+        const taken = new Set(flow.nodes.map(o => cell(o.x, o.y)));
+        while (taken.has(cell(x, y))) { x += PLACE_GRID; y += PLACE_GRID; }
         const n = makeNode(type, Math.round(x), Math.round(y), extra);
         flow.nodes.push(n);
         selection = new Set([n.id]);
@@ -193,9 +245,11 @@ export function CreativeStudio() {
         if (!el) {
             el = h('div', 'cr-node');
             el.dataset.id = n.id;
-            nodesLayer.append(el);
+            // Groups sit behind every node.
+            if (n.type === 'flow-group') nodesLayer.prepend(el); else nodesLayer.append(el);
             nodeEls.set(n.id, el);
         }
+        if (def.decor) return renderDecor(n, el);
         el.style.transform = `translate(${n.x}px, ${n.y}px)`;
         el.style.width = `${NODE_W}px`;
         el.classList.toggle('selected', selection.has(n.id));
@@ -231,6 +285,48 @@ export function CreativeStudio() {
             </div>`;
         fillPreview(el.querySelector('.cr-node-preview'), n, { compact: true });
         el.querySelector('.cr-node-run')?.addEventListener('click', (e) => { e.stopPropagation(); run(n); });
+    }
+
+    function renderDecor(n, el) {
+        el.className = `cr-node ${n.type === 'comment' ? 'cr-comment' : 'cr-group'} ${selection.has(n.id) ? 'selected' : ''}`;
+        el.style.transform = `translate(${n.x}px, ${n.y}px)`;
+        el.style.width = `${n.w}px`;
+        if (n.type === 'flow-group') {
+            el.style.height = `${n.h}px`;
+            el.style.setProperty('--gc', n.color || '#6366f1');
+            el.innerHTML = `<div class="cr-group-head">${esc(n.label)}</div><div class="cr-group-resize" data-resize="1"></div>`;
+            return;
+        }
+        el.innerHTML = `<div class="cr-comment-head">Comment</div>`;
+        const ta = h('textarea', 'cr-comment-text');
+        ta.placeholder = 'Write a note…';
+        ta.value = n.prompt || '';
+        ta.oninput = () => { n.prompt = ta.value; saveSoon(); };
+        el.append(ta);
+    }
+
+    // Nodes whose centre lies inside a group's frame.
+    function groupMembers(g) {
+        return flow.nodes.filter(n => {
+            if (n.id === g.id || n.type === 'flow-group') return false;
+            const b = nodeBox(n);
+            const cx = b.x + b.w / 2, cy = b.y + Math.min(b.h, 120) / 2;
+            return cx > g.x && cx < g.x + g.w && cy > g.y && cy < g.y + g.h;
+        });
+    }
+
+    function groupSelection(label = 'Group') {
+        const members = flow.nodes.filter(n => selection.has(n.id) && n.type !== 'flow-group');
+        if (!members.length) return null;
+        const boxes = members.map(nodeBox);
+        const pad = 40, head = 36;
+        const x = Math.min(...boxes.map(b => b.x)) - pad, y = Math.min(...boxes.map(b => b.y)) - pad - head;
+        const w = Math.max(...boxes.map(b => b.x + b.w)) + pad - x, hgt = Math.max(...boxes.map(b => b.y + b.h)) + pad - y;
+        const g = makeNode('flow-group', Math.round(x), Math.round(y), { label, w: Math.round(w), h: Math.round(hgt) });
+        flow.nodes.unshift(g);
+        selection = new Set([g.id]);
+        save(); renderAll();
+        return g;
     }
 
     async function fillPreview(box, n, { compact } = {}) {
@@ -305,6 +401,7 @@ export function CreativeStudio() {
 
     function renderAll() {
         renderNodes(); renderEdges(); renderInspector();
+        if (paletteTab === 'structure') renderPalette();
     }
 
     // ---------- Pointer interaction ----------
@@ -334,13 +431,23 @@ export function CreativeStudio() {
             e.preventDefault();
             return;
         }
+        if (e.target.closest('[data-resize]')) {
+            selection = new Set([id]);
+            drag = { kind: 'resize', n, start: toWorld(e.clientX, e.clientY), w: n.w, h: n.h };
+            stage.setPointerCapture(e.pointerId);
+            e.preventDefault(); renderAll();
+            return;
+        }
         if (e.target.closest('button, audio, video[controls], input, textarea, select')) return;
         if (e.shiftKey) { selection.has(id) ? selection.delete(id) : selection.add(id); }
         else if (!selection.has(id)) selection = new Set([id]);
         selectedEdge = null;
         const p = toWorld(e.clientX, e.clientY);
         e.preventDefault();
-        drag = { kind: 'move', start: p, moved: false, origin: [...selection].map(sid => { const s = flow.nodes.find(x => x.id === sid); return { n: s, x: s.x, y: s.y }; }) };
+        // Moving a group carries the nodes inside it.
+        const moving = new Set(selection);
+        flow.nodes.filter(g => g.type === 'flow-group' && selection.has(g.id)).forEach(g => groupMembers(g).forEach(m => moving.add(m.id)));
+        drag = { kind: 'move', start: p, moved: false, origin: [...moving].map(sid => { const s = flow.nodes.find(x => x.id === sid); return { n: s, x: s.x, y: s.y }; }) };
         stage.setPointerCapture(e.pointerId);
         renderAll(); root.focus();
     });
@@ -361,6 +468,11 @@ export function CreativeStudio() {
                 if (el) el.style.transform = `translate(${o.n.x}px, ${o.n.y}px)`;
             });
             renderEdges();
+        } else if (drag.kind === 'resize') {
+            const p = toWorld(e.clientX, e.clientY);
+            drag.n.w = Math.max(200, Math.round(drag.w + p.x - drag.start.x));
+            drag.n.h = Math.max(120, Math.round(drag.h + p.y - drag.start.y));
+            renderNode(drag.n);
         } else if (drag.kind === 'wire') {
             const a = portPos(drag.from, 'out');
             renderEdges({ a, b: toWorld(e.clientX, e.clientY), color: MODALITY[nodeOutputModality(drag.from)]?.color || '#fff' });
@@ -372,7 +484,7 @@ export function CreativeStudio() {
         if (!drag) return;
         const d = drag; drag = null;
         if (d.kind === 'pan') { saveSoon(); return; }
-        if (d.kind === 'move') { if (d.moved) save(); return; }
+        if (d.kind === 'move' || d.kind === 'resize') { if (d.moved !== false) save(); if (paletteTab === 'structure') renderPalette(); return; }
         if (d.kind === 'wire') {
             nodesLayer.querySelectorAll('.cr-in').forEach(p => p.classList.remove('ok', 'bad'));
             const target = document.elementFromPoint(e.clientX, e.clientY);
@@ -463,6 +575,8 @@ export function CreativeStudio() {
             e.preventDefault();
             selection = new Set(duplicateNodes(flow, [...selection]));
             save(); renderAll();
+        } else if (mod && e.key.toLowerCase() === 'g' && selection.size) {
+            e.preventDefault(); groupSelection();
         } else if (mod && e.key === 'Enter' && selection.size) {
             e.preventDefault();
             [...selection].forEach(id => run(flow.nodes.find(n => n.id === id)));
@@ -552,8 +666,10 @@ export function CreativeStudio() {
         inspector.innerHTML = '';
         if (selection.size !== 1) {
             inspector.innerHTML = selection.size
-                ? `<div class="cr-insp-empty">${selection.size} nodes selected<br><span class="cr-dim">Ctrl+D duplicates, Delete removes, Ctrl+Enter runs them.</span></div>`
-                : `<div class="cr-insp-empty">Select a node to edit it.<br><br><span class="cr-dim">Drag from a node's right-hand port to another node's input to connect them. Drop a wire on empty canvas to add a connected node.<br><br>Scroll to pan, Ctrl+scroll to zoom, F to fit.</span></div>`;
+                ? `<div class="cr-insp-empty">${selection.size} nodes selected<br><span class="cr-dim">Ctrl+G groups, Ctrl+D duplicates, Delete removes, Ctrl+Enter runs them.</span><br><br><button class="cr-btn cr-wide" data-group="1">Group selection</button></div>`
+                : `<div class="cr-insp-empty">Select a node to edit it.<br><br><span class="cr-dim">Drag from a node's right-hand port to another node's input to connect them. Drop a wire on empty canvas to add a connected node.<br><br>Scroll to pan, Ctrl+scroll to zoom, F to fit, Shift+click to multi-select, Ctrl+G to group.</span></div>`;
+            const gb = inspector.querySelector('[data-group]');
+            if (gb) gb.onclick = () => groupSelection();
             return;
         }
         const n = flow.nodes.find(x => x.id === [...selection][0]);
@@ -578,6 +694,20 @@ export function CreativeStudio() {
             sec('Model').append(h('div', 'cr-dim', esc(def.models[0].name)));
         }
 
+        if (n.type === 'flow-group') {
+            const s = sec('Colour');
+            const c = h('input', 'cr-input');
+            c.type = 'color'; c.value = n.color || '#6366f1';
+            c.oninput = () => { n.color = c.value; saveSoon(); renderNode(n); };
+            const members = groupMembers(n);
+            s.append(c, h('div', 'cr-hint', `${members.length} node${members.length === 1 ? '' : 's'} inside. Moving the group moves them.`));
+            if (members.some(m => !NODE_TYPES[m.type].source)) {
+                const rb = h('button', 'cr-btn cr-wide', '▶ Run group');
+                rb.onclick = () => members.filter(m => !NODE_TYPES[m.type].source).forEach(run);
+                s.append(rb);
+            }
+        }
+
         if (def.prompt || n.type === 'llm') {
             const s = sec(n.type === 'text' ? 'Text' : n.type === 'llm' ? 'Instruction' : 'Prompt');
             const ta = h('textarea', 'cr-input cr-textarea');
@@ -585,6 +715,27 @@ export function CreativeStudio() {
             ta.value = n.prompt || '';
             ta.oninput = () => { n.prompt = ta.value; saveSoon(); renderNode(n); };
             s.append(ta);
+            if (!def.source && n.type !== 'llm') {
+                const imp = h('button', 'cr-btn cr-small-btn', '✦ Improve prompt');
+                imp.title = 'Rewrite this prompt to be more specific (MiniMax M2)';
+                imp.onclick = async () => {
+                    if (!ta.value.trim()) return toast('Write a prompt first');
+                    if (!getMinimaxKey()) return settingsModal('Add your MiniMax API key to improve prompts.');
+                    imp.disabled = true; imp.innerHTML = '<span class="cr-spin"></span> Improving';
+                    try {
+                        ta.value = await chat({
+                            model: 'MiniMax-M2', temperature: 0.6,
+                            messages: [
+                                { role: 'system', content: `Rewrite the user's prompt for a ${def.label} model. Keep their intent and language; make it concrete and specific (subject, setting, style, camera or sound as relevant). Reply with the prompt only, no quotes.` },
+                                { role: 'user', content: ta.value },
+                            ],
+                        });
+                        n.prompt = ta.value; save(); renderNode(n);
+                    } catch (err) { toast(err.message); }
+                    imp.disabled = false; imp.textContent = '✦ Improve prompt';
+                };
+                s.append(imp);
+            }
             if (def.inputs.some(p => p.key === 'prompt')) s.append(h('div', 'cr-hint', 'Text wired into the Prompt port is placed before this prompt.'));
             if (['image-generation', 'video-generation', 'music'].includes(n.type)) {
                 const kits = listBrandKits();
@@ -796,6 +947,10 @@ export function CreativeStudio() {
                 row.onclick = () => {
                     n.params.voice_id = `${backend}:${v.id}`;
                     n.params.voice_name = v.name;
+                    if (n.type === 'voice') {
+                        n.label = v.name;
+                        n.result = { outputs: [{ id: uid('out'), createdAt: Date.now(), kind: 'voice', voiceId: v.id, voiceBackend: backend, name: v.name }], selected: 0 };
+                    }
                     player?.pause(); save(); m.close(); renderAll();
                 };
                 list.append(row);
@@ -924,6 +1079,135 @@ export function CreativeStudio() {
             });
         }
         save(); renderAll(); fitView();
+    }
+
+    // ---------- Agent ----------
+    const agentChats = new Map();
+    let agentBusy = false;
+
+    function toggleAgent() {
+        agentPanel.hidden = !agentPanel.hidden;
+        renderTopbar();
+        if (!agentPanel.hidden) renderAgent();
+    }
+
+    function renderAgent() {
+        const history = agentChats.get(flow.id) || [];
+        agentPanel.innerHTML = `
+            <div class="cr-agent-head"><b>✦ Agent</b><span class="cr-dim">builds and edits this flow</span><button class="cr-mini" data-x>✕</button></div>
+            <div class="cr-agent-log"></div>
+            <form class="cr-agent-form"><textarea class="cr-input" rows="2" placeholder="e.g. Make a 3-shot storyboard for a coffee ad, then a voiceover"></textarea><button class="cr-btn cr-primary" type="submit">Send</button></form>`;
+        agentPanel.querySelector('[data-x]').onclick = toggleAgent;
+        const log = agentPanel.querySelector('.cr-agent-log');
+        if (!history.length) log.append(h('div', 'cr-dim cr-pad', 'Describe what you want to make. The agent adds, wires, edits and runs nodes on the canvas. Uses your MiniMax key.'));
+        history.forEach(m => {
+            const b = h('div', `cr-msg cr-msg-${m.role}`, esc(m.display ?? m.content));
+            if (m.ops?.length) b.append(h('div', 'cr-msg-ops', m.ops.map(o => `<span>${esc(o)}</span>`).join('')));
+            log.append(b);
+        });
+        if (agentBusy) log.append(h('div', 'cr-msg cr-msg-assistant', '<span class="cr-spin"></span> Thinking…'));
+        log.scrollTop = log.scrollHeight;
+        const form = agentPanel.querySelector('form');
+        const input = form.querySelector('textarea');
+        input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } };
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            const text = input.value.trim();
+            if (!text || agentBusy) return;
+            if (!getMinimaxKey()) return settingsModal('Add your MiniMax API key to use the agent.');
+            const chatFlow = flow;
+            const hist = agentChats.get(chatFlow.id) || [];
+            agentChats.set(chatFlow.id, hist);
+            hist.push({ role: 'user', content: text });
+            agentBusy = true; renderAgent();
+            try {
+                const { reply, ops } = await askAgent(chatFlow, hist.slice(0, -1), text);
+                const applied = chatFlow === flow ? await applyOps(ops) : [];
+                hist.push({ role: 'assistant', content: JSON.stringify({ reply, ops }), display: reply || 'Done.', ops: applied });
+            } catch (err) {
+                hist.push({ role: 'assistant', content: `Error: ${err.message}`, display: `Error: ${err.message}` });
+            }
+            agentBusy = false;
+            if (!agentPanel.hidden) renderAgent();
+        };
+        input.focus();
+    }
+
+    // Applies agent operations; returns one short line per applied op.
+    async function applyOps(ops) {
+        const refs = new Map();
+        const idOf = (r) => refs.get(r) || r;
+        const done = [];
+        const added = [];
+        let toRun = [];
+        const rightmost = flow.nodes.length ? Math.max(...flow.nodes.map(n => n.x + (n.w || NODE_W))) + 80 : viewCenter().x - 300;
+        let col = 0;
+        for (const o of ops) {
+            try {
+                if (o.op === 'add_node' && NODE_TYPES[o.type] && !NODE_TYPES[o.type].decor) {
+                    const def = NODE_TYPES[o.type];
+                    const x = Number.isFinite(o.x) ? o.x : rightmost + (col++ % 4) * 340;
+                    const y = Number.isFinite(o.y) ? o.y : viewCenter().y - 150;
+                    const extra = { label: o.label || def.label };
+                    if (o.prompt) extra.prompt = String(o.prompt);
+                    if (def.models.some(m => m.id === o.model)) extra.model = o.model;
+                    const n = makeNode(o.type, Math.round(x), Math.round(y), extra);
+                    Object.assign(n.params, cleanParams(o.type, o.params));
+                    flow.nodes.push(n);
+                    if (o.ref) refs.set(o.ref, n.id);
+                    added.push(n.id);
+                    done.push(`+ ${n.label}`);
+                } else if (o.op === 'add_edges') {
+                    for (const e of o.edges || []) {
+                        const from = flow.nodes.find(n => n.id === idOf(e.from)), to = flow.nodes.find(n => n.id === idOf(e.to));
+                        if (!from || !to) continue;
+                        const port = NODE_TYPES[to.type].inputs.find(p => p.key === e.port && p.accepts.includes(nodeOutputModality(from))) || compatiblePorts(from, to)[0];
+                        if (port && addEdge(flow, from.id, to.id, port.key)) done.push(`${from.label} → ${to.label}`);
+                    }
+                } else if (o.op === 'update_node') {
+                    const n = flow.nodes.find(x => x.id === idOf(o.id));
+                    if (!n) continue;
+                    if (o.label) n.label = String(o.label);
+                    if (o.prompt != null) n.prompt = String(o.prompt);
+                    if (NODE_TYPES[n.type].models.some(m => m.id === o.model)) n.model = o.model;
+                    Object.assign(n.params, cleanParams(n.type, o.params));
+                    done.push(`✎ ${n.label}`);
+                } else if (o.op === 'remove_elements') {
+                    const ids = (o.ids || []).map(idOf).filter(id => flow.nodes.some(n => n.id === id));
+                    if (ids.length) { removeNodes(flow, ids); done.push(`− ${ids.length} node${ids.length > 1 ? 's' : ''}`); }
+                } else if (o.op === 'add_group') {
+                    renderNodes();
+                    selection = new Set((o.ids || []).map(idOf));
+                    const g = groupSelection(o.label || 'Group');
+                    if (g) done.push(`▢ ${g.label}`);
+                } else if (o.op === 'run_nodes') {
+                    toRun = toRun.concat((o.ids || []).map(idOf));
+                }
+            } catch (err) {
+                console.warn('Agent op failed', o, err);
+            }
+        }
+        if (added.length) selection = new Set(added);
+        save(); renderAll();
+        if (added.length) requestAnimationFrame(() => focusNodes(flow.nodes.map(n => n.id), 1.2));
+        const runnable = toRun.map(id => flow.nodes.find(n => n.id === id)).filter(n => n && !NODE_TYPES[n.type].source);
+        if (runnable.length && confirm(`The agent wants to run ${runnable.length} node${runnable.length > 1 ? 's' : ''}. Generation uses your API credits. Run now?`)) {
+            runnable.forEach(run);
+            done.push(`▶ ${runnable.length} run`);
+        }
+        return done;
+    }
+
+    // Keeps only parameters the node type declares, with allowed values.
+    function cleanParams(type, params) {
+        const out = {};
+        for (const pd of NODE_TYPES[type].params) {
+            const v = params?.[pd.name];
+            if (v == null || pd.type === 'voice') continue;
+            if (pd.options && !pd.options.map(String).includes(String(v))) continue;
+            out[pd.name] = pd.type === 'number' || typeof pd.options?.[1] === 'number' ? +v : v;
+        }
+        return out;
     }
 
     // ---------- Small UI helpers ----------

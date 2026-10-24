@@ -33,6 +33,25 @@ export const NODE_TYPES = {
         label: 'Asset', group: 'Sources', output: null, inputs: [],
         source: true, models: [], params: [],
     },
+    // A library voice placed on the canvas, wired into TTS or Voice Changer.
+    voice: {
+        label: 'Voice', group: 'Sources', output: 'voice', inputs: [],
+        source: true,
+        models: [
+            { id: 'elevenlabs', name: 'ElevenLabs voices', backend: 'elevenlabs' },
+            { id: 'minimax', name: 'MiniMax voices', backend: 'minimax' },
+        ],
+        params: [{ name: 'voice_id', type: 'voice', label: 'Voice' }],
+    },
+    // Canvas furniture: sticky notes and frames, no ports.
+    comment: {
+        label: 'Comment', group: 'Sources', output: null, inputs: [],
+        source: true, decor: true, models: [], params: [],
+    },
+    'flow-group': {
+        label: 'Group', group: null, output: null, inputs: [],
+        source: true, decor: true, models: [], params: [],
+    },
 
     // ---- Generation ----
     'image-generation': {
@@ -193,6 +212,7 @@ export const IMAGE_OPS = {
 };
 
 export function nodeOutputModality(node) {
+    if (NODE_TYPES[node.type]?.decor) return null;
     if (node.type === 'asset') return node.asset?.kind || 'image';
     if (node.type === 'composition') return node.result?.outputs?.[0]?.kind || 'video';
     if (node.type === 'audio-effects') return node.result?.outputs?.[0]?.kind || 'audio';
