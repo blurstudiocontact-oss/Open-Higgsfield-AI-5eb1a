@@ -1307,7 +1307,7 @@ export function ObsStudio() {
                 <h4>MiniMax</h4>
                 <label>MiniMax API key<input type="password" data-k="mmKey" autocomplete="off" placeholder="From platform.minimax.io"></label>
                 <label>API base URL<input type="url" data-k="mmBase" placeholder="Default: https://api.minimax.io"></label>
-                <p class="obs-note">Keys are stored in this browser only. Set a base URL to go through your own proxy if the MiniMax API refuses browser requests (CORS).</p>
+                <p class="obs-note">Keys are stored in this browser only. The browser calls the MiniMax API directly. Change the base URL only to use another MiniMax endpoint.</p>
             </div>`;
         const q = (k) => modal.body.querySelector(`[data-k="${k}"]`);
         if (recorder.state !== 'inactive' || streamer.active) {

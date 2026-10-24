@@ -12,7 +12,11 @@ function navigate(page) {
   Array.from(contentArea.children).forEach(child => child._cleanup?.());
   contentArea.innerHTML = '';
 
-  if (page === 'image') {
+  if (page === 'reels') {
+    import('./components/ReelStudio.js').then(({ ReelStudio }) => {
+      contentArea.appendChild(ReelStudio());
+    });
+  } else if (page === 'image') {
     contentArea.appendChild(ImageStudio());
   } else if (page === 'video') {
     import('./components/VideoStudio.js').then(({ VideoStudio }) => {
@@ -39,7 +43,7 @@ contentArea.className = 'flex-1 relative w-full overflow-hidden flex flex-col bg
 app.appendChild(contentArea);
 
 // Initial Route
-navigate('image');
+navigate('reels');
 
 // Event Listener for Navigation
 window.addEventListener('navigate', (e) => {

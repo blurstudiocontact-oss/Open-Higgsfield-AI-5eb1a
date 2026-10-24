@@ -85,13 +85,9 @@ Results are added to the scene being edited as Media Sources that keep the
 clip URL. Clips are downloaded into a blob so the canvas stays untainted for
 recording and streaming, and fetched again after a reload.
 
-Browser access (CORS):
-
-- In development, Vite proxies `/minimax-api` to `api.minimax.io` and
-  `/minimax-cdn` to `video-product.cdn.minimax.io`.
-- In production, requests go straight to `https://api.minimax.io` unless an
-  API base URL (your own proxy) is set in Settings.
-- None of this was tested against the real API.
+Browser access: the page calls `https://api.minimax.io` and its result CDN
+directly, with no proxy, so MiniMax must accept the page's origin (CORS).
+This was not tested against the real API.
 
 ## Daydream Scope (extension, not part of OBS)
 

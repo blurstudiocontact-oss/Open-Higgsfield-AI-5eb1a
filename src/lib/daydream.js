@@ -58,6 +58,9 @@ export const modelStatus = (pipelineId) => call(`/api/v1/models/status?pipeline_
 
 export const downloadModels = (pipelineId) => call('/api/v1/models/download', json('POST', { pipeline_id: pipelineId }));
 
+// Scope's real-time Stable Diffusion pipeline (StreamDiffusionV2).
+export const STREAM_DIFFUSION = 'streamdiffusionv2';
+
 // Loading is asynchronous: start it, then poll the status until it settles.
 export async function loadPipeline(pipelineIds, loadParams = {}, onStage = () => {}, timeout = 10 * 60 * 1000) {
     await call('/api/v1/pipeline/load', json('POST', { pipeline_ids: pipelineIds, load_params: loadParams }));
@@ -159,6 +162,12 @@ export async function startSession({ input, prompt, mode = 'video', params = {} 
             channel.send(JSON.stringify(steps > 0
                 ? { transition: { target_prompts: [{ text, weight: 1.0 }], num_steps: steps } }
                 : { prompts: [{ text, weight: 1.0 }] }));
+            return true;
+        },
+        // Any runtime parameter, e.g. { noise_scale: 0.7 }.
+        setParams(params) {
+            if (channel.readyState !== 'open') return false;
+            channel.send(JSON.stringify(params));
             return true;
         },
         close() {
