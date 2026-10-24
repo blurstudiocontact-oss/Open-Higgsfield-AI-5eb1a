@@ -8,6 +8,8 @@ let contentArea;
 // Router
 function navigate(page) {
   if (!contentArea) return;
+  // Pages holding live resources (streams, workers) release them on exit.
+  Array.from(contentArea.children).forEach(child => child._cleanup?.());
   contentArea.innerHTML = '';
 
   if (page === 'image') {
@@ -19,6 +21,10 @@ function navigate(page) {
   } else if (page === 'cinema') {
     import('./components/CinemaStudio.js').then(({ CinemaStudio }) => {
       contentArea.appendChild(CinemaStudio());
+    });
+  } else if (page === 'obs') {
+    import('./components/ObsStudio.js').then(({ ObsStudio }) => {
+      contentArea.appendChild(ObsStudio());
     });
   }
 }

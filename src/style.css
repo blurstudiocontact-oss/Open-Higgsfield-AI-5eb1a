@@ -1,5 +1,6 @@
 @import './styles/global.css';
 @import './styles/studio.css';
+@import './styles/obs.css';
 
 /* App-specific layout */
 #app {

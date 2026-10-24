@@ -21,6 +21,7 @@ For a deep dive into the technical architecture and the philosophy behind the "I
 - **Multi-Image Input** — Upload up to 14 reference images for compatible edit models (Nano Banana 2 Edit, Flux Kontext Dev, GPT-4o Edit, and more). Multi-select picker with order badges, batch upload, and a "Use Selected" confirmation flow.
 - **Video Studio** — Generate videos from text prompts (40+ text-to-video models) or animate a start-frame image (60+ image-to-video models). Same intelligent mode switching as Image Studio.
 - **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture)
+- **OBS Studio** — Browser reconstruction of OBS: scenes and sources (screen, webcam, mic, image, media, text, color), drag/resize preview, filters and chroma key, audio mixer with meters, Studio Mode with transitions and T-Bar, local recording and WHIP streaming. See [docs/obs-reconstruction.md](docs/obs-reconstruction.md).
 - **Upload History** — Reference images are uploaded once and stored locally. A picker panel lets you reuse any previously uploaded image across sessions — no re-uploading.
 - **Smart Controls** — Dynamic aspect ratio, resolution/quality, and duration pickers that adapt to each model's capabilities (including t2i models with resolution or quality options)
 - **Generation History** — Browse, revisit, and download all past generations (persisted in browser storage)
