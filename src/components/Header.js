@@ -73,7 +73,7 @@ export function Header(navigate) {
         </svg>
     `;
     keyBtn.onclick = () => {
-        localStorage.removeItem('muapi_key');
+        localStorage.removeItem('minimax_key');
         window.location.reload();
     };
 

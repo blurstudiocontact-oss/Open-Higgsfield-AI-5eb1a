@@ -1,4 +1,4 @@
-import { muapi } from '../lib/muapi.js';
+import { minimax } from '../lib/minimax.js';
 import { t2vModels, getAspectRatiosForVideoModel, getDurationsForModel, getResolutionsForVideoModel, i2vModels, getAspectRatiosForI2VModel, getDurationsForI2VModel, getResolutionsForI2VModel } from '../lib/models.js';
 import { AuthModal } from './AuthModal.js';
 import { createUploadPicker } from './UploadPicker.js';
@@ -545,7 +545,7 @@ export function VideoStudio() {
             }
         }
 
-        const apiKey = localStorage.getItem('muapi_key');
+        const apiKey = localStorage.getItem('minimax_key');
         if (!apiKey) {
             AuthModal(() => generateBtn.click());
             return;
@@ -573,7 +573,7 @@ export function VideoStudio() {
             const model = getCurrentModels().find(m => m.id === selectedModel);
             if (model?.inputs?.quality) params.quality = model.inputs.quality.default;
 
-            const res = imageMode ? await muapi.generateI2V(params) : await muapi.generateVideo(params);
+            const res = imageMode ? await minimax.generateI2V(params) : await minimax.generateVideo(params);
 
             console.log('[VideoStudio] Full response:', res);
 

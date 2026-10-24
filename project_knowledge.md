@@ -7,7 +7,7 @@ This document serves as a comprehensive knowledge base for the Open Higgsfield A
 **Open Higgsfield AI** is an ambitious open-source project dedicated to **replicating the full functionality of the Higgsfield platform**.
 
 - **Core Goal:** To build a feature-complete, self-hosted alternative to Higgsfield, starting with **Image Generation** (Nano) and expanding into **Video Generation** (Cinema) and other creative tools.
-- **Current State:** The Image Studio ("Nano Banana Pro" interface) is fully operational, featuring a premium dark-mode UI, history management, and multi-model support via the [Muapi.ai](https://muapi.ai) engine.
+- **Current State:** The Image Studio ("Nano Banana Pro" interface) is fully operational, featuring a premium dark-mode UI, history management, and generation through the [MiniMax API](https://platform.minimax.io) (Image-01 for images, H3 for video).
 - **Future Direction:** The architecture is designed to scale for video generation, model training interfaces, and advanced editing tools, mirroring the evolving capabilities of Higgsfield.
 
 - **Stack:** Vite, Vanilla JavaScript, Tailwind CSS v4.
@@ -27,8 +27,8 @@ src/
 │   ├── SettingsModal.js   # Panel for managing settings (clearing API key).
 │   └── Sidebar.js        # (Currently unused/placeholder) Navigation sidebar.
 ├── lib/
-│   ├── muapi.js          # The API Client. Handles auth, submission, and polling.
-│   └── models.js         # Source of truth for model definitions and endpoints.
+│   ├── minimax.js        # The API Client. Handles auth, submission, polling and uploads.
+│   └── models.js         # MiniMax model catalog (Image-01, H3).
 ├── styles/
 │   ├── global.css        # Global resets, fonts, and animation keyframes.
 │   ├── studio.css        # Specific styles for the studio interface.
@@ -45,30 +45,25 @@ This is the most complex component. It handles:
 - **Prompt Input:** A textarea with auto-grow logic and max-height constraints (fixed in `bf2efdb`).
 - **Dynamic Controls:**
     - **Model Picker:** Lists models from `models.js`.
-    - **Quality/Resolution:** Only appears for models with explicit resolution support (like `nano-banana-pro`). Hidden for others (like `flux-schnell`).
+    - **Quality/Resolution:** Hidden: Image-01 has a fixed output size per aspect ratio.
 - **Generation Flow:**
     1. Checks for API key in `localStorage`. If missing, opens `AuthModal`.
-    2. Calls `muapi.generateImage()`.
-    3. Polling loop waits for result.
+    2. Calls `minimax.generateImage()` (synchronous for Image-01).
     4. On success, adds result to `generationHistory` and displays it.
 - **History:**
-    - Stored in `localStorage` key `muapi_history`.
+    - Stored in `localStorage` key `minimax_image_history`.
     - Slides in from the right sidebar.
     - Thumbnails are clickable to re-view; hover to download.
 
-### `muapi.js` (The Engine)
-Encapsulates all communication with `api.muapi.ai`.
-- **Authentication:** Uses `x-api-key` header (NOT `Authorization: Bearer`).
-- **Pattern:** Submit -> Poll.
-    - `POST` to endpoint (e.g., `/api/v1/nano-banana-pro`).
-    - API returns a `request_id`.
-    - `POST` / `GET` loop on `/api/v1/predictions/{id}/result` until status is `completed`, `succeeded`, or `failed`.
-- **Normalization:** The polling response structure varies. `muapi.js` normalizes the result to ensure `url` is always populated (extracting from `outputs[0]` if necessary).
+### `minimax.js` (The Engine)
+Encapsulates all communication with `api.minimax.io`.
+- **Authentication:** `Authorization: Bearer <key>`, key in `localStorage` as `minimax_key`.
+- **Images:** `POST /v1/image_generation` (`image-01`, `image-01-live`), synchronous; URLs are in `data.image_urls`.
+- **Video (H3):** `POST /v2/video_generation` returns a `task_id`; poll `GET /v1/query/video_generation` until `Success`, then exchange the `file_id` at `GET /v1/files/retrieve` for a `download_url`.
+- **Uploads:** `POST /v1/files/upload` (multipart, `purpose=video_generation`).
 
 ### `models.js` (The Data)
-Contains the `t2iModels` array.
-- Each model has an `id`, `name`, `inputs` schema (resolution, aspect ratio support), and a crucial `endpoint` property.
-- **Crucial:** The `endpoint` property maps the internal ID to the API path (e.g., `flux-schnell` -> `flux-schnell-image`).
+A small MiniMax catalog (`t2iModels`, `i2iModels`, `t2vModels`, `i2vModels`) whose `inputs` enums drive the aspect ratio, duration and resolution pickers.
 
 ## 4. UI & Styling (Tailwind v4)
 
@@ -82,8 +77,8 @@ Contains the `t2iModels` array.
 
 ## 5. Development Setup
 
-- **Vite Proxy:** Local development uses a proxy in `vite.config.js` to route `/api` requests to `https://api.muapi.ai` to avoid CORS issues.
-- **Environment:** `muapi.js` detects `import.meta.env.DEV` to decide whether to use the relative `/api` path (proxy) or the full URL (production).
+- **Vite Proxy:** Local development proxies `/minimax-api` to `https://api.minimax.io` and `/minimax-cdn` to the H3 result CDN, to avoid CORS.
+- **Environment:** `minimax.js` uses the proxy paths when `import.meta.env.DEV` is true, the real host in production, or a custom base URL saved in OBS Studio → Settings → MiniMax.
 
 ## 6. Known Gotchas & Fixes
 
@@ -94,6 +89,6 @@ Contains the `t2iModels` array.
 
 ## 7. Future Roadmap (Potential)
 
-- **Video Generation:** Expand `models.js` and `ImageStudio.js` to support video models (already present in `schema_data` but not wired up).
+- **Video Generation:** Done: Video Studio and the OBS page use MiniMax H3.
 - **In-painting/Out-painting:** Add canvas editing tools.
 - **User Accounts:** Move beyond local storage for history.

@@ -55,14 +55,13 @@ observed and correct any divergence.
   until reactivated from Properties. Large images may be dropped when storage
   is full.
 
-## MiniMax AI (extension, not part of OBS)
+## MiniMax H3 (extension, not part of OBS)
 
-The **MiniMax AI** button (Controls dock) and the source context menu
-(**Edit with MiniMax H3** on media sources, **Animate with MiniMax** on the
-others) open one dialog. Code: `src/lib/obs/minimax.js`.
-
-**MiniMax H3**, through the hosted MiniMax API with a MiniMax API key
-(Settings → MiniMax):
+The **MiniMax H3** button (Controls dock) and the source context menu
+(**Edit with MiniMax H3** on media sources, **Animate with MiniMax H3** on the
+others) open one dialog. It uses the app-wide MiniMax API key and the shared
+client in `src/lib/minimax.js`; OBS-specific job code is in
+`src/lib/obs/minimax.js`.
 
 - **Edit a video**: the last recording, a media source in the scene, or a
   local file is uploaded (`/v1/files/upload`). It is sent as `reference_video`
@@ -76,10 +75,6 @@ others) open one dialog. Code: `src/lib/obs/minimax.js`.
 - Flow: `POST /v2/video_generation`, poll `GET /v1/query/video_generation`,
   then resolve the `file_id` with `GET /v1/files/retrieve`. Submitted task ids
   are kept in `localStorage`, so a reload resumes waiting for them.
-
-**Hailuo 2.3**, through Muapi with the app's `muapi_key`: animate a frame
-(Pro, Standard, Fast) or text to video (Pro, Standard). It cannot edit a
-video.
 
 Sources: [MiniMax-AI/awesome-minimax-h3-integration](https://github.com/MiniMax-AI/awesome-minimax-h3-integration)
 and the API notes it links in

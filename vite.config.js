@@ -7,12 +7,7 @@ export default defineConfig({
     ],
     server: {
         proxy: {
-            '/api': {
-                target: 'https://api.muapi.ai',
-                changeOrigin: true,
-                secure: false
-            },
-            // MiniMax API and its result CDN, for the OBS page's H3 integration.
+            // MiniMax API and its result CDN, to avoid CORS during development.
             '/minimax-api': {
                 target: 'https://api.minimax.io',
                 changeOrigin: true,
