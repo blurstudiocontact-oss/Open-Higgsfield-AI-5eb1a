@@ -12,6 +12,7 @@ export const SOURCE_TYPES = {
     media: { label: 'Media Source', video: true, audio: true },
     text: { label: 'Text', video: true, audio: false },
     color: { label: 'Color Source', video: true, audio: false },
+    daydream: { label: 'Daydream Scope (AI)', video: true, audio: false },
 };
 
 export const TRANSITIONS = {
@@ -34,6 +35,8 @@ const DEFAULT_SETTINGS = {
         outline: false, outlineColor: '#000000', outlineSize: 4, align: 'left',
     },
     color: { color: '#d1d1d1', width: 1920, height: 1080 },
+    // input: 'camera' or the id of another source whose frames are sent to Scope.
+    daydream: { input: 'camera', pipelineId: '', prompt: 'A watercolor painting', transitionSteps: 8, width: 512, height: 512, fps: 24 },
 };
 
 export const DEFAULT_FILTERS = {

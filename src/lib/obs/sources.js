@@ -3,6 +3,7 @@
 // cannot survive a reload (streams, object URLs) lives here.
 
 import { clipFetchUrl } from './minimax.js';
+import { startSession } from '../daydream.js';
 
 export class SourceRuntime {
     constructor(source, audio) {
@@ -12,6 +13,9 @@ export class SourceRuntime {
         this.stream = null;
         this.objectUrl = null;
         this.mediaBlob = null;   // file behind a media source, reusable as an edit source
+        this.session = null;     // Daydream Scope WebRTC session
+        this.feed = null;        // { stream, timer } feeding frames to Scope
+        this.resolveInput = () => null; // looks up another source's runtime by id
         this.status = 'idle';    // idle | needs-activation | ready | error
         this.error = '';
         this.textDirty = true;
@@ -41,6 +45,8 @@ export class SourceRuntime {
         const { type } = this.source;
         if (type === 'text') return this.renderText();
         if (type === 'color') { this.status = 'ready'; return; }
+        // Needs a running Scope server, so it only starts from its properties.
+        if (type === 'daydream') { this.status = 'needs-activation'; this.onChange(); return; }
         if (type === 'image') return this.loadImage();
         if (type === 'video_capture' || type === 'audio_input') return this.activate().catch(() => {});
         // Generated clips are re-downloaded from their URL.
@@ -109,6 +115,8 @@ export class SourceRuntime {
                 this.audio.attachElement(this.source, video);
                 await video.play().catch(() => {});
                 this.status = 'ready';
+            } else if (type === 'daydream') {
+                await this.startDaydream();
             } else if (type === 'image' && file) {
                 settings.dataUrl = await readAsDataUrl(file);
                 settings.fileName = file.name;
@@ -121,6 +129,79 @@ export class SourceRuntime {
             this.error = err?.message || String(err);
         }
         this.onChange();
+    }
+
+    // Frames for Scope: the webcam, a capture source's own stream, or any other
+    // source drawn onto a canvas at the pipeline's resolution.
+    async daydreamInput() {
+        const s = this.source.settings;
+        if (s.input === 'camera') {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: s.width }, height: { ideal: s.height }, frameRate: { ideal: s.fps } },
+                audio: false,
+            });
+            return { stream, own: true };
+        }
+        const rt = this.resolveInput(s.input);
+        if (!rt || rt.status !== 'ready') throw new Error('The input source is not active');
+        const live = rt.stream?.getVideoTracks().length ? rt.stream : null;
+        if (live) return { stream: live, own: false };
+        const canvas = document.createElement('canvas');
+        canvas.width = s.width;
+        canvas.height = s.height;
+        const ctx = canvas.getContext('2d');
+        const draw = () => {
+            const d = rt.drawable;
+            const { w, h } = rt.naturalSize;
+            if (!d || !w || !h) return;
+            // Cover-fit so the pipeline gets a full frame.
+            const k = Math.max(canvas.width / w, canvas.height / h);
+            ctx.drawImage(d, (canvas.width - w * k) / 2, (canvas.height - h * k) / 2, w * k, h * k);
+        };
+        draw();
+        const timer = setInterval(draw, 1000 / s.fps);
+        return { stream: canvas.captureStream(s.fps), own: true, timer };
+    }
+
+    async startDaydream() {
+        const s = this.source.settings;
+        this.feed = await this.daydreamInput();
+        this.session = await startSession({ input: this.feed.stream, prompt: s.prompt });
+        this.session.channel.addEventListener('message', (e) => {
+            let msg = null;
+            try { msg = JSON.parse(e.data); } catch { return; }
+            if (msg.type === 'stream_stopped') {
+                this.status = 'error';
+                this.error = msg.error_message || 'Scope stopped the stream';
+                this.stopDaydream();
+                this.onChange();
+            }
+        });
+        this.session.pc.addEventListener('connectionstatechange', () => {
+            if (this.session?.pc.connectionState === 'failed') {
+                this.status = 'error';
+                this.error = 'WebRTC connection to Scope failed';
+                this.stopDaydream();
+                this.onChange();
+            }
+        });
+        const output = await this.session.output;
+        await this.attachStream(output, true);
+    }
+
+    setDaydreamPrompt(text) {
+        return this.session?.setPrompt(text, +this.source.settings.transitionSteps || 0) || false;
+    }
+
+    stopDaydream() {
+        this.session?.close();
+        this.session = null;
+        if (this.feed) {
+            clearInterval(this.feed.timer);
+            // Never stop tracks that belong to another source.
+            if (this.feed.own) this.feed.stream.getTracks().forEach(t => t.stop());
+            this.feed = null;
+        }
     }
 
     async attachStream(stream, withVideo) {
@@ -194,6 +275,7 @@ export class SourceRuntime {
     }
 
     teardownMedia() {
+        this.stopDaydream();
         this.audio.detach(this.source.id);
         this.stream?.getTracks().forEach(t => t.stop());
         this.stream = null;

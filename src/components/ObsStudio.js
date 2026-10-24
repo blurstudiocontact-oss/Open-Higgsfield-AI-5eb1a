@@ -10,6 +10,8 @@ import {
     H3, frameToFile, snapshotDrawable, runMinimaxJob, h3Wait, pendingTasks, rememberTask, forgetTask,
 } from '../lib/obs/minimax.js';
 import { getMinimaxKey, setMinimaxKey, getMinimaxBase, setMinimaxBase } from '../lib/minimax.js';
+import * as daydream from '../lib/daydream.js';
+import { getScopeUrl, setScopeUrl } from '../lib/daydream.js';
 
 const ICONS = {
     eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -109,6 +111,7 @@ export function ObsStudio() {
                     <button class="obs-btn" data-action="studio">Studio Mode</button>
                     <button class="obs-btn" data-action="projector">Windowed Projector</button>
                     <button class="obs-btn" data-action="minimax">MiniMax H3</button>
+                    <button class="obs-btn" data-action="daydream">Daydream</button>
                     <button class="obs-btn" data-action="settings">Settings</button>
                 </div>
             </section>
@@ -132,6 +135,7 @@ export function ObsStudio() {
         let rt = runtimes.get(source.id);
         if (rt) return rt;
         rt = new SourceRuntime(source, audio);
+        rt.resolveInput = (id) => runtimes.get(id);
         rt.onChange = () => {
             fitNewItems(source.id);
             renderSources();
@@ -287,7 +291,7 @@ export function ObsStudio() {
     });
 
     function typeGlyph(type) {
-        return { display_capture: '🖥', video_capture: '📷', audio_input: '🎙', image: '🖼', media: '🎞', text: 'T', color: '■' }[type] || '?';
+        return { display_capture: '🖥', video_capture: '📷', audio_input: '🎙', image: '🖼', media: '🎞', text: 'T', color: '■', daydream: '✨' }[type] || '?';
     }
 
     function addSourceMenuItems() {
@@ -952,6 +956,7 @@ export function ObsStudio() {
 
     $a('settings').onclick = () => openSettings();
     $a('minimax').onclick = () => openMinimax();
+    $a('daydream').onclick = () => openDaydream();
 
     root.querySelector('.obs-docks').addEventListener('click', (e) => {
         const action = e.target.closest('button')?.dataset.action;
@@ -1139,6 +1144,93 @@ export function ObsStudio() {
                     field('Width', input('number', s.width, v => { s.width = Math.max(1, +v || 1); save(); }, { min: 1 }));
                     field('Height', input('number', s.height, v => { s.height = Math.max(1, +v || 1); save(); }, { min: 1 }));
                     break;
+                case 'daydream':
+                    await daydreamProperties();
+                    break;
+            }
+        }
+
+        // Daydream Scope source: pick a pipeline (built-in or from a plugin),
+        // an input, and a prompt that can change live while streaming.
+        async function daydreamProperties() {
+            const note = (text) => { const p = document.createElement('p'); p.className = 'obs-note'; p.textContent = text; body.appendChild(p); return p; };
+            const server = note(`Scope server: ${getScopeUrl()} — checking…`);
+            let pipelines = [];
+            let loaded = null;
+            try {
+                const [h, list, st] = await Promise.all([daydream.health(), daydream.listPipelines(), daydream.pipelineStatus()]);
+                server.textContent = `Scope ${h.version} at ${getScopeUrl()}`;
+                pipelines = list.filter(p => !p.usage.includes('preprocessor') && !p.usage.includes('postprocessor'));
+                loaded = st.status === 'loaded' ? st : null;
+            } catch (err) {
+                server.textContent = err.message;
+                button('Open Daydream settings', () => openDaydream());
+                return;
+            }
+            if (!s.pipelineId) s.pipelineId = loaded?.pipeline_id || pipelines[0]?.id || '';
+            const pipelineSel = field('Pipeline', select(pipelines.map(p => [p.id, `${p.name}${p.id === loaded?.pipeline_id ? ' (loaded)' : ''}${p.vramGb ? ` · ~${p.vramGb} GB VRAM` : ''}`]), s.pipelineId,
+                v => { s.pipelineId = v; save(); show('properties'); }));
+            pipelineSel.title = pipelines.find(p => p.id === s.pipelineId)?.description || '';
+            field('Width', input('number', s.width, v => { s.width = Math.max(16, Math.round(+v / 16) * 16 || 512); save(); }, { min: 16, max: 2048, step: 16 }));
+            field('Height', input('number', s.height, v => { s.height = Math.max(16, Math.round(+v / 16) * 16 || 512); save(); }, { min: 16, max: 2048, step: 16 }));
+            const pipe = pipelines.find(p => p.id === s.pipelineId);
+            const isLoaded = loaded?.pipeline_id === s.pipelineId
+                && loaded.load_params?.width === s.width && loaded.load_params?.height === s.height;
+            const stage = note(isLoaded ? 'Pipeline loaded and ready.' : 'Pipeline not loaded at this size.');
+            if (pipe?.requiresModels) {
+                const ms = await daydream.modelStatus(pipe.id).catch(() => null);
+                if (ms && !ms.downloaded) {
+                    const pct = ms.progress?.percentage ?? ms.progress?.progress;
+                    stage.textContent = ms.progress?.is_downloading ? `Downloading models${pct != null ? ` (${Math.round(pct)}%)` : ''}…` : 'Models for this pipeline are not downloaded yet.';
+                    button('Download models', async () => {
+                        try { await daydream.downloadModels(pipe.id); } catch (err) { toast(err.message); }
+                        show('properties');
+                    });
+                    button('Refresh', () => show('properties'));
+                    return;
+                }
+            }
+            if (!isLoaded) {
+                button('Load pipeline', async (e) => {
+                    e.target.disabled = true;
+                    try {
+                        await daydream.loadPipeline([s.pipelineId], { width: s.width, height: s.height }, (msg) => { stage.textContent = msg; });
+                    } catch (err) {
+                        toast(err.message);
+                    }
+                    show('properties');
+                });
+            }
+            const inputs = [['camera', 'Webcam']];
+            editScene().items.forEach(i => {
+                const src = col.sources[i.sourceId];
+                if (src && src.id !== source.id && src.type !== 'daydream' && SOURCE_TYPES[src.type].video) inputs.push([src.id, `Source: ${src.name}`]);
+            });
+            const videoInput = !pipe || pipe.modes.includes('video');
+            if (videoInput) field('Input', select(inputs, s.input, v => { s.input = v; save(); }));
+            else note('This pipeline generates from text only; no input is sent.');
+            let promptTimer = null;
+            field('Prompt', input('textarea', s.prompt, v => {
+                s.prompt = v;
+                save();
+                clearTimeout(promptTimer);
+                // Live update while streaming, without flooding the data channel.
+                promptTimer = setTimeout(() => rt.setDaydreamPrompt(v), 400);
+            }, { rows: 3 }));
+            field('Prompt transition steps (0 = instant)', input('number', s.transitionSteps, v => { s.transitionSteps = Math.max(0, Math.round(+v) || 0); save(); }, { min: 0, max: 32 }));
+            field('Input FPS', input('number', s.fps, v => { s.fps = Math.min(60, Math.max(1, Math.round(+v) || 24)); save(); }, { min: 1, max: 60 }));
+            status();
+            if (rt.status === 'ready') {
+                button('Stop stream', () => { rt.teardownMedia(); rt.status = 'needs-activation'; rt.onChange(); show('properties'); });
+            } else {
+                const start = button('Start stream', async () => {
+                    if (!isLoaded) { toast('Load the pipeline first'); return; }
+                    start.disabled = true;
+                    start.textContent = 'Connecting…';
+                    await rt.activate();
+                    if (rt.status === 'error') toast(`Daydream: ${rt.error}`);
+                    show('properties');
+                });
             }
         }
 
@@ -1618,6 +1710,92 @@ export function ObsStudio() {
         fillVideoSources();
         sync();
         renderJobs();
+    }
+
+    // ---------- Daydream Scope: server, plugins and pipelines ----------
+    function openDaydream() {
+        const modal = openModal('Daydream Scope');
+        modal.body.innerHTML = `
+            <div class="obs-form">
+                <label>Scope server URL<span class="obs-row"><input type="url" data-k="url" class="obs-grow"><button class="obs-btn" data-k="connect">Connect</button></span></label>
+                <p class="obs-note" data-k="status">Run Scope on a GPU machine (uv run daydream-scope, the desktop app, or a cloud template), then connect.</p>
+                <h4>Plugins</h4>
+                <ul class="obs-mm-jobs" data-k="plugins"></ul>
+                <label>Install a plugin (git URL, optionally @tag, or PyPI name)<span class="obs-row"><input type="text" data-k="spec" class="obs-grow" placeholder="https://github.com/user/scope-plugin"><button class="obs-btn" data-k="install">Install</button></span></label>
+                <h4>Pipelines</h4>
+                <ul class="obs-mm-jobs" data-k="pipelines"></ul>
+                <p class="obs-note">To use a pipeline, add a <b>Daydream Scope (AI)</b> source to a scene and pick it in the source's properties.</p>
+            </div>`;
+        const q = (k) => modal.body.querySelector(`[data-k="${k}"]`);
+        q('url').value = getScopeUrl();
+        const busy = (on, msg) => {
+            modal.body.querySelectorAll('button').forEach(b => { b.disabled = on; });
+            if (msg) q('status').textContent = msg;
+        };
+        const row = (list, label, detail, actions = []) => {
+            const li = document.createElement('li');
+            li.innerHTML = '<span class="obs-mm-job-label"></span><span class="obs-mm-job-stage"></span>';
+            li.querySelector('.obs-mm-job-label').textContent = label;
+            li.querySelector('.obs-mm-job-stage').textContent = detail;
+            actions.forEach(([text, fn]) => {
+                const b = document.createElement('button');
+                b.className = 'obs-btn obs-mm-small';
+                b.textContent = text;
+                b.onclick = fn;
+                li.appendChild(b);
+            });
+            list.appendChild(li);
+        };
+
+        async function refresh() {
+            const plugins = q('plugins');
+            const pipes = q('pipelines');
+            plugins.innerHTML = '';
+            pipes.innerHTML = '';
+            try {
+                const h = await daydream.health();
+                const [{ plugins: installed, failed }, list, st] = await Promise.all([
+                    daydream.listPlugins(), daydream.listPipelines(), daydream.pipelineStatus(),
+                ]);
+                q('status').textContent = `Connected to Scope ${h.version}.`;
+                const fromPlugin = new Map();
+                installed.forEach(pl => (pl.pipelines || []).forEach(pp => fromPlugin.set(pp.pipeline_id, pl.name)));
+                if (!installed.length) plugins.innerHTML = '<li class="obs-empty">No plugins installed</li>';
+                installed.forEach(pl => row(plugins,
+                    `${pl.name}${pl.version ? ` ${pl.version}` : ''}`,
+                    `${(pl.pipelines || []).map(pp => pp.pipeline_name).join(', ') || 'no pipelines'}${pl.update_available ? ` · update ${pl.latest_version} available` : ''}`,
+                    [
+                        ...(pl.update_available ? [['Update', () => run(() => daydream.installPlugin(pl.package_spec || pl.name, { upgrade: true }, (m) => busy(true, m)))]] : []),
+                        ['Uninstall', () => run(() => daydream.uninstallPlugin(pl.name, (m) => busy(true, m)))],
+                    ]));
+                failed.forEach(f => row(plugins, f.name || f.package_name || 'Plugin', `Failed to load: ${f.error || f.error_message || 'unknown error'}`));
+                list.forEach(p => row(pipes,
+                    `${p.name}${p.id === st?.pipeline_id && st.status === 'loaded' ? ' (loaded)' : ''}`,
+                    [fromPlugin.has(p.id) ? `plugin: ${fromPlugin.get(p.id)}` : 'built-in', p.modes.join('/'), p.usage.join('/'), p.vramGb ? `~${p.vramGb} GB` : '']
+                        .filter(Boolean).join(' · ')));
+            } catch (err) {
+                q('status').textContent = err.message;
+            }
+        }
+
+        async function run(task) {
+            busy(true);
+            try { await task(); } catch (err) { toast(`Daydream: ${err.message}`); }
+            busy(false);
+            refresh();
+        }
+
+        q('connect').onclick = () => { setScopeUrl(q('url').value.trim()); refresh(); };
+        q('install').onclick = () => {
+            const spec = q('spec').value.trim();
+            if (!spec) return;
+            run(async () => {
+                await daydream.installPlugin(spec, {}, (m) => busy(true, m));
+                q('spec').value = '';
+                toast('Plugin installed');
+            });
+        };
+        refresh();
     }
 
     // ---------- Generic UI helpers ----------

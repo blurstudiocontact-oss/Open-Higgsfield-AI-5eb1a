@@ -374,3 +374,4 @@
 .obs-mm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; }
 .obs-mm-key { display: flex; gap: 6px; align-items: flex-end; }
 .obs-mm-key label { flex: 1; }
+.obs-mm-small { padding: 2px 8px; font-size: 12px; }

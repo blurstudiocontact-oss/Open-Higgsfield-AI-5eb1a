@@ -93,6 +93,32 @@ Browser access (CORS):
   API base URL (your own proxy) is set in Settings.
 - None of this was tested against the real API.
 
+## Daydream Scope (extension, not part of OBS)
+
+[Daydream Scope](https://github.com/daydreamlive/scope) is an open-source
+real-time AI video server that runs on the user's GPU machine or a cloud
+box. Its plugins add pipelines (models, effects). Code: `src/lib/daydream.js`.
+
+- **Daydream** button (Controls dock): set the Scope server URL (default
+  `http://localhost:8000`), see the installed plugins and the pipelines they
+  provide, and install, update or uninstall plugins (git URL, optionally
+  `@tag`, or a PyPI name). Installing calls `POST /api/v1/plugins`, then
+  `POST /api/v1/restart`, then polls `/health`.
+- **Daydream Scope (AI)** source: pick a pipeline (built-in or from a
+  plugin), an output size, an input (webcam or another source in the scene)
+  and a prompt.
+  - Missing models can be downloaded (`/api/v1/models/download`). The
+    pipeline is loaded with `/api/v1/pipeline/load` and polled until ready.
+  - The input is streamed to Scope over WebRTC (`/api/v1/webrtc/offer` with
+    `input_mode: "video"`, trickle ICE via `PATCH`). The transformed stream
+    comes back and is drawn like any other source.
+  - Editing the prompt while streaming sends a `transition` message on the
+    `parameters` data channel.
+- Endpoint shapes come from Scope v0.2.5 (`docs/api/*.md`,
+  `src/scope/server/app.py`). The server allows any CORS origin.
+- Tested only against a mocked Scope (HTTP mocked, WebRTC answered by a
+  loopback peer), not a real GPU server.
+
 ## Unknowns and gaps
 
 - Browser Source: cross-origin iframes cannot be drawn into a canvas.

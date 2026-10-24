@@ -20,6 +20,7 @@ For a deep dive into the technical architecture and the philosophy behind the "I
 - **Video Studio** — Text-to-video with MiniMax H3, or upload a start frame to animate it. Duration 5 / 10 / 15 s, resolution 768P or 2K, and an `adaptive` ratio for image-to-video.
 - **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture), rendered with MiniMax Image-01.
 - **OBS Studio** — Browser reconstruction of OBS: scenes and sources (screen, webcam, mic, image, media, text, color), drag/resize preview, filters and chroma key, audio mixer with meters, Studio Mode with transitions and T-Bar, local recording and WHIP streaming. Its **MiniMax H3** dialog edits a recording or clip, animates a studio frame, or generates from text, and drops the result into the scene. See [docs/obs-reconstruction.md](docs/obs-reconstruction.md).
+- **Daydream Scope (real-time AI)** — In OBS Studio, a **Daydream Scope (AI)** source streams the webcam or another source to a [Daydream Scope](https://github.com/daydreamlive/scope) server and shows the transformed video live; prompts can change while streaming. The **Daydream** panel manages Scope plugins (install, update, uninstall) and lists the pipelines they add. Requires a Scope server on a GPU machine or cloud box.
 - **Upload History** — Reference images are uploaded once and stored locally. A picker panel lets you reuse any previously uploaded image across sessions.
 - **Generation History** — Browse, revisit, and download all past generations (persisted in browser storage)
 - **API Key Management** — The MiniMax API key is stored in browser localStorage and only sent to the MiniMax API
@@ -106,6 +107,7 @@ src/
 │   └── Sidebar.js        # Navigation sidebar
 ├── lib/
 │   ├── minimax.js        # MiniMax API client: H3 video, Image-01, file upload
+│   ├── daydream.js       # Daydream Scope client: pipelines, plugins, WebRTC streaming
 │   ├── models.js         # MiniMax model catalog (inputs drive the pickers)
 │   ├── obs/              # OBS engine: scenes, sources, compositor, audio, outputs, H3 jobs
 │   └── uploadHistory.js  # localStorage CRUD + canvas thumbnail generation for upload history
