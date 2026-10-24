@@ -1,5 +1,4 @@
 import './style.css';
-import { Header } from './components/Header.js';
 import { ImageStudio } from './components/ImageStudio.js';
 
 const app = document.querySelector('#app');
@@ -34,8 +33,6 @@ function navigate(page) {
 }
 
 app.innerHTML = '';
-// Pass navigate to Header so links work
-app.appendChild(Header(navigate));
 
 contentArea = document.createElement('main');
 contentArea.id = 'content-area';
