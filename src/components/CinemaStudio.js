@@ -1,5 +1,5 @@
 
-import { muapi } from '../lib/muapi.js';
+import { minimax } from '../lib/minimax.js';
 import { CameraControls } from './CameraControls.js';
 import { buildNanoBananaPrompt, CAMERA_MAP, LENS_MAP } from '../lib/promptUtils.js';
 import { AuthModal } from './AuthModal.js';
@@ -161,14 +161,14 @@ export function CinemaStudio() {
     };
     updateArBtn();
     arBtn.onclick = () => {
-        createDropdown(['16:9', '21:9', '9:16', '1:1', '4:5'], currentSettings.aspect_ratio, (val) => {
+        createDropdown(['16:9', '21:9', '9:16', '1:1', '3:4'], currentSettings.aspect_ratio, (val) => {
             currentSettings.aspect_ratio = val;
             updateArBtn();
         }, arBtn);
     };
     settingsToolbar.appendChild(arBtn);
 
-    // Resolution
+    // Resolution (image-01 has a fixed output size per aspect ratio, so this stays hidden)
     const resBtn = document.createElement('button');
     resBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg border border-white/5';
     const updateResBtn = (val) => {
@@ -179,7 +179,6 @@ export function CinemaStudio() {
     resBtn.onclick = () => {
         createDropdown(['1K', '2K', '4K'], resBtn.dataset.value, (val) => { updateResBtn(val); }, resBtn);
     };
-    settingsToolbar.appendChild(resBtn);
 
     leftColumn.appendChild(settingsToolbar);
     promptBar.appendChild(leftColumn);
@@ -417,7 +416,7 @@ export function CinemaStudio() {
         const basePrompt = textarea.value.trim();
         if (!basePrompt) return;
 
-        const apiKey = localStorage.getItem('muapi_key');
+        const apiKey = localStorage.getItem('minimax_key');
         if (!apiKey) {
             AuthModal(() => generateBtn.click());
             return;
@@ -436,12 +435,10 @@ export function CinemaStudio() {
         );
 
         try {
-            const res = await muapi.generateImage({
-                model: 'nano-banana-pro',
+            const res = await minimax.generateImage({
+                model: 'minimax-image-01',
                 prompt: finalPrompt,
                 aspect_ratio: currentSettings.aspect_ratio,
-                resolution: (resBtn.dataset.value || '1k').toLowerCase(),
-                negative_prompt: "blurry, low quality, distortion, bad composition"
             });
 
             if (res && res.url) {
@@ -451,8 +448,7 @@ export function CinemaStudio() {
                     timestamp: Date.now(),
                     settings: {
                         prompt: basePrompt,
-                        ...currentSettings,
-                        resolution: resBtn.dataset.value
+                        ...currentSettings
                     }
                 });
 

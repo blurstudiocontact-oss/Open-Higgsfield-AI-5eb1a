@@ -1,14 +1,13 @@
 # Open Higgsfield AI — Open-Source Alternative to Higgsfield AI
 
-> **The free, open-source alternative to Higgsfield AI.** Generate AI images and videos using 200+ state-of-the-art models — without the closed ecosystem or subscription fees.
+> **The free, open-source alternative to Higgsfield AI.** Generate images and videos with MiniMax Image-01 and MiniMax H3, and run a browser OBS studio, without a closed ecosystem or subscription.
 
-Open Higgsfield AI is an open-source AI image, video, and cinema studio that brings Higgsfield-style creative workflows to everyone. Powered by [Muapi.ai](https://muapi.ai), it supports text-to-image, image-to-image, text-to-video, and image-to-video generation across models like Flux, Nano Banana, Midjourney, Kling, Sora, Veo, Seedream, and more — all from a sleek, modern interface you can self-host and customize.
+Open Higgsfield AI is an open-source AI image, video, and cinema studio that brings Higgsfield-style creative workflows to everyone. It runs on the [MiniMax API](https://platform.minimax.io): **MiniMax H3** for video (text-to-video, image-to-video and video editing, up to 15 s at 2K with native stereo audio) and **MiniMax Image-01** for images.
 
 **Why Open Higgsfield AI instead of Higgsfield AI?**
 - **Free & open-source** — no subscription, no vendor lock-in
 - **Self-hosted** — your data stays on your machine
-- **200+ models** — text-to-image, image-to-image, text-to-video, image-to-video
-- **Multi-image input** — feed up to 14 reference images into compatible models
+- **One API key** — MiniMax H3 and Image-01 behind a single MiniMax key
 - **Extensible** — add your own models, modify the UI, build on top of it
 
 For a deep dive into the technical architecture and the philosophy behind the "Infinite Budget" cinema workflow, see our [comprehensive guide and roadmap](https://medium.com/@anilmatcha/building-open-higgsfield-ai-an-open-source-ai-cinema-studio-83c1e0a2a5f1).
@@ -17,76 +16,25 @@ For a deep dive into the technical architecture and the philosophy behind the "I
 
 ## ✨ Features
 
-- **Image Studio** — Generate images from text prompts (50+ text-to-image models) or transform existing images (55+ image-to-image models). Switches model set automatically based on whether a reference image is provided. Quality and resolution controls visible for models that support them.
-- **Multi-Image Input** — Upload up to 14 reference images for compatible edit models (Nano Banana 2 Edit, Flux Kontext Dev, GPT-4o Edit, and more). Multi-select picker with order badges, batch upload, and a "Use Selected" confirmation flow.
-- **Video Studio** — Generate videos from text prompts (40+ text-to-video models) or animate a start-frame image (60+ image-to-video models). Same intelligent mode switching as Image Studio.
-- **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture)
-- **Upload History** — Reference images are uploaded once and stored locally. A picker panel lets you reuse any previously uploaded image across sessions — no re-uploading.
-- **Smart Controls** — Dynamic aspect ratio, resolution/quality, and duration pickers that adapt to each model's capabilities (including t2i models with resolution or quality options)
+- **Image Studio** — Text-to-image with MiniMax Image-01 (8 aspect ratios). Upload a portrait to switch to subject reference (Image-01 or Image-01 Live) and place the same person in a new scene.
+- **Video Studio** — Text-to-video with MiniMax H3, or upload a start frame to animate it. Duration 5 / 10 / 15 s, resolution 768P or 2K, and an `adaptive` ratio for image-to-video.
+- **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture), rendered with MiniMax Image-01.
+- **OBS Studio** — Browser reconstruction of OBS: scenes and sources (screen, webcam, mic, image, media, text, color), drag/resize preview, filters and chroma key, audio mixer with meters, Studio Mode with transitions and T-Bar, local recording and WHIP streaming. Its **MiniMax H3** dialog edits a recording or clip, animates a studio frame, or generates from text, and drops the result into the scene. See [docs/obs-reconstruction.md](docs/obs-reconstruction.md).
+- **Daydream Scope (real-time AI)** — In OBS Studio, a **Daydream Scope (AI)** source streams the webcam or another source to a [Daydream Scope](https://github.com/daydreamlive/scope) server and shows the transformed video live; prompts can change while streaming. The **Daydream** panel manages Scope plugins (install, update, uninstall) and lists the pipelines they add. Requires a Scope server on a GPU machine or cloud box.
+- **Upload History** — Reference images are uploaded once and stored locally. A picker panel lets you reuse any previously uploaded image across sessions.
 - **Generation History** — Browse, revisit, and download all past generations (persisted in browser storage)
-- **Image & Video Download** — One-click download of generated outputs in full resolution
-- **API Key Management** — Secure API key storage in browser localStorage (never sent to any server except Muapi)
-- **Responsive Design** — Works seamlessly on desktop and mobile with dark glassmorphism UI
+- **API Key Management** — The MiniMax API key is stored in browser localStorage and only sent to the MiniMax API
+- **Responsive Design** — Works on desktop and mobile with a dark glassmorphism UI
 
-### 🖼️ Image Studio — Dual Mode
+### 🎬 MiniMax H3
 
-The Image Studio automatically switches between two model sets:
-
-| Mode | Trigger | Models | Prompt |
-| :--- | :--- | :--- | :--- |
-| **Text-to-Image** | Default (no image) | 50+ t2i models (Flux, Nano Banana 2, Seedream 5.0, Ideogram, GPT-4o, Midjourney…) | Required |
-| **Image-to-Image** | Reference image uploaded | 55+ i2i models (Kontext, Nano Banana 2 Edit, Seedream 5.0 Edit, Seededit, Upscaler…) | Optional |
-
-#### Newly Added Models
-
-| Model | Type | Key Features |
+| Mode | Where | Inputs |
 | :--- | :--- | :--- |
-| **Nano Banana 2** | Text-to-Image | Google Gemini 3.1 Flash Image · Resolution 1K/2K/4K · Google Search enhancement · aspect ratio `auto` |
-| **Nano Banana 2 Edit** | Image-to-Image | Up to **14 reference images** · Resolution 1K/2K/4K · Google Search enhancement |
-| **Seedream 5.0** | Text-to-Image | ByteDance · Quality basic/high · 8 aspect ratios · up to 4K |
-| **Seedream 5.0 Edit** | Image-to-Image | ByteDance · Natural language style transfer · Quality basic/high |
+| **Text-to-Video** | Video Studio, OBS | Prompt |
+| **Image-to-Video** | Video Studio, OBS | Start frame + prompt |
+| **Video editing** | OBS | Source video (recording, media source or file) + edit instruction, optional reference image |
 
-#### Multi-Image Input
-
-Models that accept multiple reference images expose a multi-select picker when active:
-
-| Model | Max Images |
-| :--- | :--- |
-| Nano Banana 2 Edit | 14 |
-| Nano Banana Edit | 10 |
-| Flux Kontext Dev I2I | 10 |
-| Kling O1 Edit Image | 10 |
-| GPT-4o Edit / GPT Image 1.5 Edit | 10 |
-| Bytedance Seedream Edit v4 / v4.5 | 10 |
-| Vidu Q2 Reference to Image | 7 |
-| Flux 2 Flex/Pro Edit | 8 |
-| Nano Banana Pro Edit | 8 |
-| Flux Kontext Pro/Max I2I | 2 |
-| Wan 2.5/2.6 Image Edit | 2–3 |
-| Qwen Image Edit Plus / 2511 | 3 |
-| GPT-4o Image to Image | 5 |
-| Flux 2 Klein 4b/9b Edit | 4 |
-
-When a multi-image model is selected the upload trigger switches to multi-select mode:
-- **Checkboxes with order numbers** — images are sent to the model in the order you select them
-- **Batch upload** — pick multiple files at once from your file dialog
-- **Count badge** on the trigger shows how many images are active; a `+` badge appears when more slots are available
-- **"Use Selected" button** confirms and closes the picker
-
-### 🎬 Video Studio — Dual Mode
-
-The Video Studio follows the same pattern:
-
-| Mode | Trigger | Models | Prompt |
-| :--- | :--- | :--- | :--- |
-| **Text-to-Video** | Default (no image) | 40+ t2v models (Kling, Sora, Veo, Wan, Seedance 2.0, Hailuo, Runway…) | Required |
-| **Image-to-Video** | Start frame uploaded | 60+ i2v models (Kling I2V, Veo3 I2V, Runway I2V, Wan I2V, Midjourney I2V…) | Optional |
-
-#### Newly Added Models
-
-| Model | Type | Key Features |
-| :--- | :--- | :--- |
-| **Seedance 2.0** | Text-to-Video | ByteDance · Aspect ratios 16:9 / 9:16 / 4:3 / 3:4 · Duration 5 / 10 / 15s · Quality basic/high |
+H3 output is 24 fps with generated stereo audio. Generation is asynchronous and can take several minutes.
 
 ### 🎥 Cinema Studio Controls
 
@@ -101,13 +49,12 @@ The **Cinema Studio** offers precise control over the virtual camera, translatin
 
 ### 📁 Upload History & Picker
 
-Every image you upload is saved locally (URL + thumbnail) so you never upload the same file twice:
+Every image you upload to MiniMax is saved locally (URL + thumbnail) so you never upload the same file twice:
 
 - Click the upload button to open the **reference image picker**
 - Previously uploaded images appear in a 3-column grid with thumbnails
-- **Single-image models** — click a thumbnail to instantly select and close
-- **Multi-image models** — toggle multiple thumbnails (shown with order numbers), then click **Use Selected**
-- Upload new images with the **Upload files** button (supports multi-file selection in multi-image mode)
+- Click a thumbnail to select it and close the picker
+- Upload new images with the **Upload files** button
 - Remove individual images from history with the ✕ button
 - History persists across browser sessions (stored in `localStorage`)
 
@@ -116,7 +63,7 @@ Every image you upload is saved locally (URL + thumbnail) so you never upload th
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) (v18+)
-- A [Muapi.ai](https://muapi.ai) API key
+- A [MiniMax](https://platform.minimax.io) API key
 
 ### Setup
 
@@ -132,7 +79,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser. You'll be prompted to enter your Muapi API key on first use.
+Open `http://localhost:5173` in your browser. You'll be prompted to enter your MiniMax API key on first use.
 
 ### Production Build
 
@@ -141,27 +88,33 @@ npm run build
 npm run preview
 ```
 
+In production the browser calls `https://api.minimax.io` directly. If the API refuses browser requests (CORS), point the app at your own proxy with **OBS Studio → Settings → MiniMax → API base URL**.
+
 ## 🏗️ Architecture
 
 ```
 src/
 ├── components/
-│   ├── ImageStudio.js    # Dual-mode t2i/i2i studio with dynamic model switching & multi-image support
-│   ├── VideoStudio.js    # Dual-mode t2v/i2v studio with dynamic model switching
+│   ├── ImageStudio.js    # Text-to-image and subject-reference studio
+│   ├── VideoStudio.js    # Text-to-video and image-to-video studio (H3)
 │   ├── CinemaStudio.js   # Pro studio with camera controls & infinite canvas flow
-│   ├── UploadPicker.js   # Upload button + history panel; single & multi-image select modes
+│   ├── ObsStudio.js      # OBS reconstruction with the MiniMax H3 dialog
+│   ├── UploadPicker.js   # Upload button + history panel
 │   ├── CameraControls.js # Scrollable picker for camera/lens/focal/aperture
 │   ├── Header.js         # App header with settings and controls
 │   ├── AuthModal.js      # API key input modal
 │   ├── SettingsModal.js  # Settings panel for API key management
 │   └── Sidebar.js        # Navigation sidebar
 ├── lib/
-│   ├── muapi.js          # API client: generateImage, generateVideo, generateI2I, generateI2V, uploadFile
-│   ├── models.js         # 200+ model definitions with endpoints, inputs, maxImages, quality/resolution mappings
+│   ├── minimax.js        # MiniMax API client: H3 video, Image-01, file upload
+│   ├── daydream.js       # Daydream Scope client: pipelines, plugins, WebRTC streaming
+│   ├── models.js         # MiniMax model catalog (inputs drive the pickers)
+│   ├── obs/              # OBS engine: scenes, sources, compositor, audio, outputs, H3 jobs
 │   └── uploadHistory.js  # localStorage CRUD + canvas thumbnail generation for upload history
 ├── styles/
 │   ├── global.css        # Global styles and animations
 │   ├── studio.css        # Studio-specific styles
+│   ├── obs.css           # OBS page styles
 │   └── variables.css     # CSS custom properties
 ├── main.js               # App entry point
 └── style.css             # Tailwind imports
@@ -169,30 +122,23 @@ src/
 
 ## 🔌 API Integration
 
-The app communicates with [Muapi.ai](https://muapi.ai) using a two-step pattern:
+The app talks to the [MiniMax API](https://platform.minimax.io) with `Authorization: Bearer <key>`:
 
-1. **Submit** — `POST /api/v1/{model-endpoint}` with prompt and parameters
-2. **Poll** — `GET /api/v1/predictions/{request_id}/result` until status is `completed`
+| Purpose | Call |
+| :--- | :--- |
+| Video (H3) | `POST /v2/video_generation` with `model: "MiniMax-H3"`, a `content` array (text, `first_frame`, `reference_video`, `reference_image`), `resolution`, `duration`, `ratio` |
+| Video status | `GET /v1/query/video_generation?task_id=…` until `Success`, then `GET /v1/files/retrieve?file_id=…` for the `download_url` |
+| Images | `POST /v1/image_generation` with `model: "image-01"` (or `image-01-live`), `aspect_ratio`, optional `subject_reference` |
+| Uploads | `POST /v1/files/upload` (multipart, `purpose=video_generation`) |
 
-Authentication uses the `x-api-key` header. During development, a Vite proxy handles CORS by routing `/api` requests to `https://api.muapi.ai`.
-
-File uploads use `POST /api/v1/upload_file` (multipart/form-data) and return a hosted URL that is passed to image-conditioned models. For multi-image models the full `images_list` array is forwarded to the API in one request.
-
-## 🎨 Supported Model Categories
-
-| Category | Count | Examples |
-|---|---|---|
-| **Text-to-Image** | 50+ | Flux Dev, Nano Banana 2, Seedream 5.0, Ideogram v3, Midjourney v7, GPT-4o, SDXL |
-| **Image-to-Image** | 55+ | Nano Banana 2 Edit (×14), Flux Kontext Pro, GPT-4o Edit, Seededit v3, Upscaler, Background Remover |
-| **Text-to-Video** | 40+ | Kling v3, Sora 2, Veo 3, Wan 2.6, Seedance 2.0, Seedance Pro, Hailuo 2.3, Runway Gen-3 |
-| **Image-to-Video** | 60+ | Kling v2.1 I2V, Veo3 I2V, Runway I2V, Midjourney v7 I2V, Hunyuan I2V, Wan2.2 I2V |
+H3 call shapes follow the live-verified notes in [joeVenner/awesome-minimax-h3](https://github.com/joeVenner/awesome-minimax-h3), indexed by [MiniMax-AI/awesome-minimax-h3-integration](https://github.com/MiniMax-AI/awesome-minimax-h3-integration). During development, Vite proxies `/minimax-api` to `api.minimax.io` and `/minimax-cdn` to the result CDN to avoid CORS.
 
 ## 🛠️ Tech Stack
 
 - **Vite** — Build tool & dev server
 - **Tailwind CSS v4** — Utility-first styling
 - **Vanilla JS** — No framework, pure DOM manipulation
-- **Muapi.ai** — AI model API gateway
+- **MiniMax API** — H3 video and Image-01
 
 ## 🤔 How is this different from Higgsfield AI?
 
@@ -200,9 +146,8 @@ Higgsfield AI is a proprietary AI video and image generation platform. **Open Hi
 
 | | Higgsfield AI | Open Higgsfield AI |
 | :--- | :--- | :--- |
-| **Cost** | Subscription-based | Free (open-source) |
-| **Models** | Proprietary | 200+ open & commercial models |
-| **Multi-image input** | Limited | Up to 14 images per request |
+| **Cost** | Subscription-based | Free (open-source); you pay MiniMax per generation |
+| **Models** | Proprietary | MiniMax H3 and Image-01 |
 | **Self-hosting** | No | Yes |
 | **Customizable** | No | Fully hackable |
 | **Data privacy** | Cloud-based | Your data stays local |
@@ -214,7 +159,7 @@ MIT
 
 ## 🙏 Credits
 
-Built with [Muapi.ai](https://muapi.ai) — the unified API for AI image and video generation models.
+Video and images by [MiniMax](https://platform.minimax.io) (H3, Image-01).
 
 ---
 **Deep Dive**: For more details on the "AI Influencer" engine, upcoming "Popcorn" storyboarding features, and the future of this project, read the [full technical overview](https://medium.com/@anilmatcha/building-open-higgsfield-ai-an-open-source-ai-cinema-studio-83c1e0a2a5f1).

@@ -1,6 +1,6 @@
 {
   "name": "open-higgsfield-ai",
-  "description": "Open-source alternative to Higgsfield AI — AI image generation and cinema studio with 20+ models",
+  "description": "Open-source alternative to Higgsfield AI — image, video and cinema studio on MiniMax H3 and Image-01, with a browser OBS studio",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -1,4 +1,4 @@
-import { muapi } from '../lib/muapi.js';
+import { minimax } from '../lib/minimax.js';
 import {
     t2iModels, getAspectRatiosForModel, getResolutionsForModel, getQualityFieldForModel,
     i2iModels, getAspectRatiosForI2IModel, getResolutionsForI2IModel, getQualityFieldForI2IModel,
@@ -430,7 +430,7 @@ export function ImageStudio() {
         generationHistory.unshift(entry);
 
         // Save to localStorage
-        localStorage.setItem('muapi_history', JSON.stringify(generationHistory.slice(0, 50)));
+        localStorage.setItem('minimax_image_history', JSON.stringify(generationHistory.slice(0, 50)));
 
         // Show sidebar
         historySidebar.classList.remove('translate-x-full', 'opacity-0');
@@ -456,7 +456,7 @@ export function ImageStudio() {
 
             thumb.onclick = (e) => {
                 if (e.target.closest('.hist-download')) {
-                    downloadImage(entry.url, `muapi-${entry.id || idx}.jpg`);
+                    downloadImage(entry.url, `minimax-${entry.id || idx}.jpg`);
                     return;
                 }
                 showImageInCanvas(entry.url);
@@ -494,7 +494,7 @@ export function ImageStudio() {
 
     // --- Load history from localStorage ---
     try {
-        const saved = JSON.parse(localStorage.getItem('muapi_history') || '[]');
+        const saved = JSON.parse(localStorage.getItem('minimax_image_history') || '[]');
         if (saved.length > 0) {
             saved.forEach(e => generationHistory.push(e));
             historySidebar.classList.remove('translate-x-full', 'opacity-0');
@@ -508,7 +508,7 @@ export function ImageStudio() {
         const current = resultImg.src;
         if (current) {
             const entry = generationHistory.find(e => e.url === current);
-            downloadImage(current, `muapi-${entry?.id || 'image'}.jpg`);
+            downloadImage(current, `minimax-${entry?.id || 'image'}.jpg`);
         }
     };
 
@@ -560,7 +560,7 @@ export function ImageStudio() {
             }
         }
 
-        const apiKey = localStorage.getItem('muapi_key');
+        const apiKey = localStorage.getItem('minimax_key');
         if (!apiKey) {
             AuthModal(() => generateBtn.click());
             return;
@@ -583,7 +583,7 @@ export function ImageStudio() {
                 if (prompt) genParams.prompt = prompt;
                 const qualityField = getCurrentQualityField(selectedModel);
                 if (qualityField && qualityLabel) genParams[qualityField] = qualityLabel;
-                res = await muapi.generateI2I(genParams);
+                res = await minimax.generateI2I(genParams);
             } else {
                 const genParams = {
                     model: selectedModel,
@@ -592,7 +592,7 @@ export function ImageStudio() {
                 };
                 const qualityField = getCurrentQualityField(selectedModel);
                 if (qualityField && qualityLabel) genParams[qualityField] = qualityLabel;
-                res = await muapi.generateImage(genParams);
+                res = await minimax.generateImage(genParams);
             }
 
             console.log('[ImageStudio] Full response:', res);
