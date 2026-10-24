@@ -6,6 +6,8 @@ import { SourceRuntime } from '../lib/obs/sources.js';
 import { AudioMixer, MIN_DB, sliderToMul, mulToSlider, mulToDb } from '../lib/obs/audio.js';
 import { renderScene, itemBounds, Transitioner } from '../lib/obs/compositor.js';
 import { Recorder, WhipStreamer, supportedFormats } from '../lib/obs/outputs.js';
+import { MINIMAX_MODELS, modelOptions, frameToFile, snapshotDrawable, runMinimaxJob } from '../lib/obs/minimax.js';
+import { AuthModal } from './AuthModal.js';
 
 const ICONS = {
     eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -104,6 +106,7 @@ export function ObsStudio() {
                     </div>
                     <button class="obs-btn" data-action="studio">Studio Mode</button>
                     <button class="obs-btn" data-action="projector">Windowed Projector</button>
+                    <button class="obs-btn" data-action="minimax">Minimax AI</button>
                     <button class="obs-btn" data-action="settings">Settings</button>
                 </div>
             </section>
@@ -356,6 +359,7 @@ export function ObsStudio() {
             { label: 'Transform: Flip Horizontal', action: () => transformAction(item, 'flipH') },
             { label: 'Transform: Flip Vertical', action: () => transformAction(item, 'flipV') },
             { separator: true },
+            { label: 'Reanimate with Minimax', action: () => openMinimax({ frameSource: `item:${item.id}` }) },
             { label: 'Filters', action: () => openProperties(source, item, 'filters') },
             { label: 'Properties', action: () => openProperties(source, item) },
         ];
@@ -943,6 +947,7 @@ export function ObsStudio() {
     };
 
     $a('settings').onclick = () => openSettings();
+    $a('minimax').onclick = () => openMinimax();
 
     root.querySelector('.obs-docks').addEventListener('click', (e) => {
         const action = e.target.closest('button')?.dataset.action;
@@ -1242,6 +1247,259 @@ export function ObsStudio() {
             setMic(st.micEnabled);
             save();
         };
+    }
+
+    // ---------- Minimax AI (Hailuo 2.3 through Muapi) ----------
+    const jobs = [];
+    let renderJobs = () => {};
+
+    // Still frame from the chosen studio source, as a canvas at native size.
+    async function captureFrame(frameSource, recordingVideo) {
+        const { baseWidth: W, baseHeight: H } = col.settings;
+        if (frameSource === 'program') return snapshotDrawable(programCanvas, W, H);
+        if (frameSource === 'preview') {
+            renderScene(previewCtx, sceneById(col.previewScene), col, runtimes);
+            return snapshotDrawable(previewCanvas, W, H);
+        }
+        if (frameSource === 'recording') {
+            const v = recordingVideo;
+            if (!v?.videoWidth) throw new Error('Recording not loaded yet');
+            return snapshotDrawable(v, v.videoWidth, v.videoHeight);
+        }
+        const item = editScene().items.find(i => `item:${i.id}` === frameSource);
+        if (!item) throw new Error('Source is no longer in this scene');
+        const source = col.sources[item.sourceId];
+        const rt = runtimes.get(source.id);
+        if (!rt || rt.status !== 'ready') throw new Error(`'${source.name}' is not active`);
+        if (source.type === 'color') {
+            const c = document.createElement('canvas');
+            c.width = +source.settings.width;
+            c.height = +source.settings.height;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = source.settings.color;
+            ctx.fillRect(0, 0, c.width, c.height);
+            return c;
+        }
+        if (!rt.drawable) throw new Error(`'${source.name}' has no video`);
+        const { w, h } = rt.naturalSize;
+        return snapshotDrawable(rt.drawable, w, h, item.transform.crop);
+    }
+
+    function addGeneratedClip(sceneId, url, prompt) {
+        const scene = sceneById(sceneId) || editScene();
+        const short = prompt ? prompt.slice(0, 24) + (prompt.length > 24 ? '…' : '') : 'clip';
+        const source = createSource('media', uniqueName(col, `Hailuo: ${short}`));
+        source.settings.url = url;
+        source.settings.fileName = 'Hailuo 2.3 clip';
+        col.sources[source.id] = source;
+        const item = createItem(source.id);
+        scene.items.unshift(item);
+        selectedItemId = item.id;
+        ensureRuntime(source);
+        renderSources();
+        renderMixer();
+        save();
+    }
+
+    async function startJob(opts) {
+        const job = { id: uid('job'), label: opts.prompt || '(no prompt)', stage: 'Starting', error: '', url: '' };
+        jobs.unshift(job);
+        renderJobs();
+        try {
+            job.url = await runMinimaxJob(opts, (stage) => { job.stage = stage; renderJobs(); });
+            job.stage = 'Adding to scene';
+            renderJobs();
+            addGeneratedClip(opts.sceneId, job.url, opts.prompt);
+            job.stage = 'Done';
+            toast('Minimax clip added to the scene');
+        } catch (err) {
+            job.stage = 'Failed';
+            job.error = err.message;
+            toast(`Minimax: ${err.message}`);
+        }
+        renderJobs();
+    }
+
+    function openMinimax(preset = {}) {
+        const state = {
+            mode: preset.mode || 'i2v',
+            frameSource: preset.frameSource || 'program',
+            prompt: preset.prompt || '',
+            model: preset.model || MINIMAX_MODELS.i2v[0]?.id,
+            duration: preset.duration,
+            recordingTime: 0,
+        };
+        const modal = openModal('Minimax AI — Hailuo 2.3');
+        modal.body.innerHTML = `
+            <div class="obs-tabs">
+                <button data-mode="i2v">Reanimate a frame</button>
+                <button data-mode="t2v">Generate from text</button>
+            </div>
+            <div class="obs-form">
+                <div data-k="frame-block">
+                    <label>Start frame<select data-k="frameSource"></select></label>
+                    <div data-k="recording-block" hidden>
+                        <video data-k="recVideo" class="obs-mm-rec" muted playsinline></video>
+                        <label>Frame time<input type="range" data-k="recTime" min="0" max="1000" value="0"></label>
+                    </div>
+                    <canvas data-k="thumb" class="obs-mm-thumb"></canvas>
+                    <button class="obs-btn" data-k="refresh">Refresh frame</button>
+                </div>
+                <label>Prompt<textarea data-k="prompt" rows="3" placeholder="Describe the motion: camera move, action, mood…"></textarea></label>
+                <label>Model<select data-k="model"></select></label>
+                <label data-k="duration-row">Duration<select data-k="duration"></select></label>
+                <button class="obs-btn obs-primary" data-k="generate">Generate</button>
+                <p class="obs-note">The clip is added to the current scene as a Media Source when it is ready. Generation can take several minutes and uses your Muapi credits.</p>
+                <h4>Jobs</h4>
+                <ul class="obs-mm-jobs" data-k="jobs"></ul>
+            </div>`;
+        const q = (k) => modal.body.querySelector(`[data-k="${k}"]`);
+        const sceneId = editScene().id;
+        const recVideo = q('recVideo');
+        let frameCanvas = null;
+        let recUrl = null;
+
+        if (recorder.last) {
+            recUrl = URL.createObjectURL(recorder.last.blob);
+            recVideo.src = recUrl;
+        }
+
+        function fillFrameSources() {
+            const sel = q('frameSource');
+            const opts = [['program', 'Program output']];
+            if (studioMode) opts.push(['preview', 'Preview scene']);
+            editScene().items.forEach(i => {
+                const src = col.sources[i.sourceId];
+                if (src && SOURCE_TYPES[src.type].video) opts.push([`item:${i.id}`, `Source: ${src.name}`]);
+            });
+            if (recorder.last) opts.push(['recording', `Last recording (${recorder.last.name})`]);
+            sel.innerHTML = '';
+            opts.forEach(([v, l]) => { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); });
+            if (!opts.some(([v]) => v === state.frameSource)) state.frameSource = 'program';
+            sel.value = state.frameSource;
+        }
+
+        function fillModels() {
+            const sel = q('model');
+            const list = MINIMAX_MODELS[state.mode];
+            if (!list.some(m => m.id === state.model)) state.model = list[0]?.id;
+            sel.innerHTML = '';
+            list.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; sel.appendChild(o); });
+            sel.value = state.model;
+            const { durations, defaultDuration } = modelOptions(state.mode, state.model);
+            q('duration-row').hidden = !durations.length;
+            const dsel = q('duration');
+            dsel.innerHTML = durations.map(d => `<option value="${d}">${d} s</option>`).join('');
+            if (!durations.includes(state.duration)) state.duration = defaultDuration;
+            if (durations.length) dsel.value = state.duration;
+        }
+
+        async function refreshFrame() {
+            const thumb = q('thumb');
+            const ctx = thumb.getContext('2d');
+            try {
+                frameCanvas = await captureFrame(state.frameSource, recVideo);
+                thumb.width = 320;
+                thumb.height = Math.round(320 * frameCanvas.height / frameCanvas.width);
+                ctx.drawImage(frameCanvas, 0, 0, thumb.width, thumb.height);
+            } catch (err) {
+                frameCanvas = null;
+                thumb.width = 320;
+                thumb.height = 180;
+                ctx.fillStyle = '#16171d';
+                ctx.fillRect(0, 0, 320, 180);
+                ctx.fillStyle = '#9a9ca5';
+                ctx.font = '13px sans-serif';
+                ctx.fillText(err.message, 12, 92);
+            }
+        }
+
+        async function seekRecording() {
+            if (!recVideo.duration || !isFinite(recVideo.duration)) {
+                // MediaRecorder WebM files report no duration until seeked to the end.
+                recVideo.currentTime = 1e9;
+                await new Promise(r => recVideo.addEventListener('seeked', r, { once: true }));
+            }
+            recVideo.currentTime = (q('recTime').value / 1000) * (recVideo.duration || 0);
+            await new Promise(r => recVideo.addEventListener('seeked', r, { once: true }));
+            refreshFrame();
+        }
+
+        function sync() {
+            modal.body.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === state.mode));
+            q('frame-block').hidden = state.mode !== 'i2v';
+            q('recording-block').hidden = state.frameSource !== 'recording';
+            fillModels();
+        }
+
+        renderJobs = () => {
+            const list = q('jobs');
+            if (!list?.isConnected) return;
+            list.innerHTML = jobs.length ? '' : '<li class="obs-empty">No jobs yet</li>';
+            jobs.forEach(j => {
+                const li = document.createElement('li');
+                li.className = j.stage === 'Failed' ? 'failed' : j.stage === 'Done' ? 'done' : 'running';
+                li.innerHTML = '<span class="obs-mm-job-label"></span><span class="obs-mm-job-stage"></span>';
+                li.querySelector('.obs-mm-job-label').textContent = j.label;
+                li.querySelector('.obs-mm-job-stage').textContent = j.error ? `Failed: ${j.error}` : j.stage;
+                if (j.url) {
+                    const a = document.createElement('a');
+                    a.href = j.url;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.textContent = 'Open clip';
+                    li.appendChild(a);
+                }
+                list.appendChild(li);
+            });
+        };
+
+        modal.body.querySelectorAll('[data-mode]').forEach(b => { b.onclick = () => { state.mode = b.dataset.mode; sync(); }; });
+        q('frameSource').onchange = (e) => {
+            state.frameSource = e.target.value;
+            sync();
+            if (state.frameSource === 'recording') seekRecording(); else refreshFrame();
+        };
+        q('recTime').onchange = seekRecording;
+        q('refresh').onclick = () => (state.frameSource === 'recording' ? seekRecording() : refreshFrame());
+        q('prompt').value = state.prompt;
+        q('prompt').oninput = (e) => { state.prompt = e.target.value; };
+        q('model').onchange = (e) => { state.model = e.target.value; fillModels(); };
+        q('duration').onchange = (e) => { state.duration = +e.target.value; };
+        q('generate').onclick = async () => {
+            const prompt = state.prompt.trim();
+            if (state.mode === 't2v' && !prompt) { toast('Write a prompt first'); return; }
+            if (state.mode === 'i2v' && !frameCanvas) { toast('No start frame captured'); return; }
+            if (!localStorage.getItem('muapi_key')) {
+                // The key dialog sits under OBS modals, so close this one and come back after.
+                modal.close();
+                AuthModal(() => openMinimax(state));
+                return;
+            }
+            const { resolutions } = modelOptions(state.mode, state.model);
+            startJob({
+                mode: state.mode,
+                model: state.model,
+                prompt,
+                duration: q('duration-row').hidden ? undefined : state.duration,
+                resolution: resolutions[0],
+                frame: state.mode === 'i2v' ? await frameToFile(frameCanvas, 'obs-frame') : null,
+                sceneId,
+            });
+        };
+        const observer = new MutationObserver(() => {
+            if (!modal.body.isConnected) {
+                if (recUrl) URL.revokeObjectURL(recUrl);
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true });
+
+        fillFrameSources();
+        sync();
+        renderJobs();
+        if (state.frameSource === 'recording') recVideo.addEventListener('loadedmetadata', seekRecording, { once: true });
+        else refreshFrame();
     }
 
     // ---------- Generic UI helpers ----------

@@ -33,6 +33,7 @@ export class Recorder {
         this.pausedTotal = 0;
         this.pausedAt = 0;
         this.format = null;
+        this.last = null; // { blob, name } of the most recent recording
     }
 
     get state() {
@@ -83,6 +84,7 @@ export class Recorder {
             rec.onstop = () => {
                 const blob = new Blob(this.chunks, { type: this.format.mime.split(';')[0] });
                 const name = obsFilename(this.format.ext);
+                this.last = { blob, name };
                 const a = document.createElement('a');
                 a.href = URL.createObjectURL(blob);
                 a.download = name;

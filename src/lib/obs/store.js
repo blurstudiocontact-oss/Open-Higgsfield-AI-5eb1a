@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS = {
     video_capture: { deviceId: '', resolution: '1280x720' },
     audio_input: { deviceId: '' },
     image: { dataUrl: '', fileName: '' },
-    media: { fileName: '', loop: true },
+    media: { fileName: '', url: '', loop: true },
     text: {
         text: 'Text', font: 'Arial', size: 96, color: '#ffffff', bold: false,
         italic: false, background: '#000000', backgroundOpacity: 0,

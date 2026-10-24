@@ -40,6 +40,8 @@ export class SourceRuntime {
         if (type === 'color') { this.status = 'ready'; return; }
         if (type === 'image') return this.loadImage();
         if (type === 'video_capture' || type === 'audio_input') return this.activate().catch(() => {});
+        // Generated clips are re-downloaded from their URL.
+        if (type === 'media' && this.source.settings.url) return this.activate();
         // Display capture and local media files need a user gesture / file pick after a reload.
         this.status = 'needs-activation';
         this.onChange();
@@ -79,9 +81,20 @@ export class SourceRuntime {
                 this.audio.attachStream(this.source, stream);
                 this.status = 'ready';
             } else if (type === 'media') {
-                if (!file) { this.status = 'needs-activation'; this.onChange(); return; }
+                if (file) {
+                    settings.fileName = file.name;
+                    settings.url = '';
+                } else if (settings.url) {
+                    // Downloaded into a blob so the canvas stays untainted for recording.
+                    const res = await fetch(settings.url);
+                    if (!res.ok) throw new Error(`Could not download clip (${res.status})`);
+                    file = await res.blob();
+                } else {
+                    this.status = 'needs-activation';
+                    this.onChange();
+                    return;
+                }
                 this.objectUrl = URL.createObjectURL(file);
-                settings.fileName = file.name;
                 const video = document.createElement('video');
                 video.src = this.objectUrl;
                 video.loop = settings.loop;

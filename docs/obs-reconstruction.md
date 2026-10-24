@@ -55,6 +55,24 @@ observed and correct any divergence.
   until reactivated from Properties. Large images may be dropped when storage
   is full.
 
+## Minimax AI (extension, not part of OBS)
+
+The **Minimax AI** button (Controls dock) and **Reanimate with Minimax**
+(source context menu) call MiniMax Hailuo 2.3 through Muapi, using the app's
+existing `muapi_key`. Code: `src/lib/obs/minimax.js`.
+
+- **Reanimate a frame** (image-to-video: Hailuo 2.3 Pro, Standard or Fast).
+  The start frame comes from the program output, the preview scene, a scene
+  source (crop applied) or a chosen time in the last recording. It is uploaded
+  as JPEG, then animated from the prompt.
+- **Generate from text** (text-to-video: Hailuo 2.3 Pro or Standard).
+- The result is added to the scene that was being edited as a Media Source
+  that keeps the clip URL. It is downloaded into a blob so the canvas stays
+  untainted for recording and streaming, and is fetched again after a reload.
+  This needs the clip host to allow CORS.
+- Hailuo models generate clips: they do not edit an existing video in place.
+  "Editing" here means taking a frame from the studio and reanimating it.
+
 ## Unknowns and gaps
 
 - Browser Source: cross-origin iframes cannot be drawn into a canvas.
