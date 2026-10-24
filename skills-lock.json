@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "wan-2-7": {
+      "source": "agentspace-so/runcomfy-agent-skills",
+      "sourceType": "github",
+      "skillPath": "wan-2-7/SKILL.md",
+      "computedHash": "5f2284f846938ca30fca6e633c943559339d6f2dd7df5d78ab6b0385c1b54f83"
+    }
+  }
+}
