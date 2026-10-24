@@ -16,7 +16,7 @@ For a deep dive into the technical architecture and the philosophy behind the "I
 
 ## ✨ Features
 
-- **Reels (home page)** — A TikTok / CapCut-style editor for 9:16 reels. Record in segments from the camera or screen (15 s / 60 s / 3 min, countdown, live filters, optional Daydream AI look), or import videos and photos. Edit on a timeline with a centre playhead: trim by dragging clip edges, split, reorder, duplicate, speed (0.25×–4×), volume, filters, brightness/contrast/saturation, fit/fill, and transitions (dissolve, fade to black, flash, slide, zoom). Add animated text and emoji stickers you can drag on the preview, music, and voiceovers recorded over the reel. AI tools: **MiniMax H3** edits a clip, animates a photo or the current frame, or generates a clip from text; **Image-01** generates a photo. Export renders 1080 × 1920 at 30 fps (MP4 where the browser supports it, otherwise WebM). Projects and media are saved in the browser (localStorage + IndexedDB).
+- **Reels (home page)** — A TikTok / CapCut-style editor for 9:16 reels. Record in segments from the camera or screen (15 s / 60 s / 3 min, countdown, live filters), or import videos and photos. **Stable Diffusion live** restyles your surroundings in real time while you film: the camera streams to a [Daydream Scope](https://github.com/daydreamlive/scope) server running StreamDiffusionV2 (one-click model download and load, 8 environment presets or your own prompt, live intensity slider), and the transformed video is what gets recorded. Edit on a timeline with a centre playhead: trim by dragging clip edges, split, reorder, duplicate, speed (0.25×–4×), volume, filters, brightness/contrast/saturation, fit/fill, and transitions (dissolve, fade to black, flash, slide, zoom). Add animated text and emoji stickers you can drag on the preview, music, and voiceovers recorded over the reel. AI tools: **MiniMax H3** edits a clip, animates a photo or the current frame, or generates a clip from text; **Image-01** generates a photo. Export renders 1080 × 1920 at 30 fps (MP4 where the browser supports it, otherwise WebM). Projects and media are saved in the browser (localStorage + IndexedDB).
 - **Image Studio** — Text-to-image with MiniMax Image-01 (8 aspect ratios). Upload a portrait to switch to subject reference (Image-01 or Image-01 Live) and place the same person in a new scene.
 - **Video Studio** — Text-to-video with MiniMax H3, or upload a start frame to animate it. Duration 5 / 10 / 15 s, resolution 768P or 2K, and an `adaptive` ratio for image-to-video.
 - **Cinema Studio** — Higgsfield AI-style interface for photorealistic cinematic shots with pro camera controls (Lens, Focal Length, Aperture), rendered with MiniMax Image-01.
@@ -89,7 +89,7 @@ npm run build
 npm run preview
 ```
 
-The browser calls MiniMax through same-origin proxy paths (`/minimax-api`, `/minimax-cdn`), served by the Vite dev server and, on Netlify, by `netlify.toml`. On any other host, add the same two proxies or set **OBS Studio → Settings → MiniMax → API base URL**.
+The browser calls `https://api.minimax.io` directly, with no proxy. MiniMax must accept requests from the page's origin (CORS) for generation to work.
 
 ## 🏗️ Architecture
 
@@ -135,7 +135,7 @@ The app talks to the [MiniMax API](https://platform.minimax.io) with `Authorizat
 | Images | `POST /v1/image_generation` with `model: "image-01"` (or `image-01-live`), `aspect_ratio`, optional `subject_reference` |
 | Uploads | `POST /v1/files/upload` (multipart, `purpose=video_generation`) |
 
-H3 call shapes follow the live-verified notes in [joeVenner/awesome-minimax-h3](https://github.com/joeVenner/awesome-minimax-h3), indexed by [MiniMax-AI/awesome-minimax-h3-integration](https://github.com/MiniMax-AI/awesome-minimax-h3-integration). During development, Vite proxies `/minimax-api` to `api.minimax.io` and `/minimax-cdn` to the result CDN to avoid CORS.
+H3 call shapes follow the live-verified notes in [joeVenner/awesome-minimax-h3](https://github.com/joeVenner/awesome-minimax-h3), indexed by [MiniMax-AI/awesome-minimax-h3-integration](https://github.com/MiniMax-AI/awesome-minimax-h3-integration). Requests go straight from the browser to the MiniMax API; there is no proxy.
 
 ## 🛠️ Tech Stack
 

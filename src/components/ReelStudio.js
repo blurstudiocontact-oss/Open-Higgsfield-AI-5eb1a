@@ -622,13 +622,20 @@ export function ReelStudio() {
                         <button class="reel-icon" data-c="flip" title="Flip camera">${svg('flip')}<small>Flip</small></button>
                         <button class="reel-icon" data-c="source" title="Camera or screen">${svg('screen')}<small>Screen</small></button>
                         <button class="reel-icon" data-c="timer" title="Countdown">${svg('timer')}<small>Off</small></button>
-                        <button class="reel-icon" data-c="ai" title="Daydream AI effect">${svg('ai')}<small>AI live</small></button>
+                        <button class="reel-icon" data-c="ai" title="Stable Diffusion live (Daydream Scope)">${svg('ai')}<small>SD live</small></button>
                     </div>
                 </div>
                 <div class="reel-cap-ai" hidden>
-                    <input type="text" placeholder="AI look, e.g. anime, watercolor, cyberpunk">
-                    <button class="reel-pill reel-accent" data-c="ai-go">Apply</button>
-                    <p class="reel-note"></p>
+                    <div class="reel-cap-ai-head"><b>Stable Diffusion live</b><button class="reel-icon" data-c="ai-hide">${svg('close', 16)}</button></div>
+                    <p class="reel-note" data-c="sd-status"></p>
+                    <label class="reel-cap-url">Scope server<input type="url" data-c="sd-url"></label>
+                    <div class="reel-chips" data-c="sd-presets"></div>
+                    <input type="text" data-c="sd-prompt" placeholder="Describe your new environment, then press Enter">
+                    <label class="reel-slider"><span>Intensity</span><input type="range" min="0.2" max="1" step="0.05" value="0.7" data-c="sd-strength"><b></b></label>
+                    <div class="reel-cap-ai-actions">
+                        <button class="reel-pill" data-c="sd-setup" hidden></button>
+                        <button class="reel-pill reel-accent" data-c="sd-go">Go live</button>
+                    </div>
                 </div>
             </div>
             <div class="reel-cap-filters"></div>
@@ -680,7 +687,7 @@ export function ReelStudio() {
                 const k = Math.max(cvs.width / w, cvs.height / h);
                 g.save();
                 g.filter = FILTERS[filter].css || 'none';
-                if (source === 'camera' && facing === 'user' && src === video) { g.translate(cvs.width, 0); g.scale(-1, 1); }
+                if (source === 'camera' && facing === 'user') { g.translate(cvs.width, 0); g.scale(-1, 1); }
                 g.drawImage(src, (cvs.width - w * k) / 2, (cvs.height - h * k) / 2, w * k, h * k);
                 g.restore();
             }
@@ -752,43 +759,144 @@ export function ReelStudio() {
             q('timer').querySelector('small').textContent = countdown ? `${countdown}s` : 'Off';
         };
 
-        // Daydream Scope: the camera goes through a real-time AI pipeline and
-        // the transformed stream is what gets previewed and recorded.
+        // Stable Diffusion live: the camera is streamed to Daydream Scope's
+        // StreamDiffusionV2 pipeline, and the restyled stream is what gets
+        // previewed and recorded. Prompt and intensity change in real time.
         const aiPanel = cap.querySelector('.reel-cap-ai');
-        const aiNote = aiPanel.querySelector('.reel-note');
-        q('ai').onclick = async () => {
-            aiPanel.hidden = !aiPanel.hidden;
-            if (aiPanel.hidden) return;
-            aiNote.textContent = `Daydream Scope at ${daydream.getScopeUrl()}…`;
+        const sdStatus = q('sd-status');
+        const sdPrompt = q('sd-prompt');
+        const sdStrength = q('sd-strength');
+        const ENVIRONMENTS = [
+            ['Snowy forest', 'a snowy pine forest at dusk, soft snowfall, cinematic'],
+            ['Cyberpunk', 'neon cyberpunk city street at night, rain, glowing signs'],
+            ['Underwater', 'underwater coral reef, light rays, bubbles, deep blue'],
+            ['Anime', 'anime style, studio ghibli, vibrant colors, clean lines'],
+            ['Van Gogh', 'oil painting in the style of van gogh, swirling brush strokes'],
+            ['Desert', 'golden desert dunes at sunset, warm haze'],
+            ['Space', 'inside a futuristic space station, stars through the window'],
+            ['Jungle', 'lush tropical jungle, waterfalls, mist, green light'],
+        ];
+        let sdReady = false;
+        const strengthLabel = () => { sdStrength.nextElementSibling.textContent = `${Math.round(sdStrength.value * 100)}%`; };
+        strengthLabel();
+        q('sd-url').value = daydream.getScopeUrl();
+        ENVIRONMENTS.forEach(([label, prompt]) => {
+            const b = document.createElement('button');
+            b.className = 'reel-chip';
+            b.textContent = label;
+            b.onclick = () => {
+                q('sd-presets').querySelectorAll('.reel-chip').forEach(x => x.classList.toggle('on', x === b));
+                sdPrompt.value = prompt;
+                applyPrompt();
+            };
+            q('sd-presets').appendChild(b);
+        });
+
+        async function checkScope() {
+            const setup = q('sd-setup');
+            setup.hidden = true;
+            sdReady = false;
+            sdStatus.textContent = `Connecting to Scope at ${daydream.getScopeUrl()}…`;
             try {
-                const st = await daydream.pipelineStatus();
-                aiNote.textContent = st.status === 'loaded'
-                    ? `Pipeline ${st.pipeline_id} ready.`
-                    : 'No pipeline loaded on Scope. Load one from OBS Studio → Daydream, or in Scope itself.';
-            } catch (err) { aiNote.textContent = err.message; }
+                const [pipes, st] = await Promise.all([daydream.listPipelines(), daydream.pipelineStatus()]);
+                if (!pipes.some(p => p.id === daydream.STREAM_DIFFUSION)) {
+                    sdStatus.textContent = 'This Scope server has no StreamDiffusionV2 pipeline.';
+                    return;
+                }
+                if (st.status === 'loaded' && st.pipeline_id === daydream.STREAM_DIFFUSION) {
+                    sdReady = true;
+                    sdStatus.textContent = 'StreamDiffusionV2 ready. Pick an environment and go live.';
+                    return;
+                }
+                const models = await daydream.modelStatus(daydream.STREAM_DIFFUSION).catch(() => ({ downloaded: true }));
+                setup.hidden = false;
+                if (!models.downloaded) {
+                    const pct = models.progress?.percentage;
+                    sdStatus.textContent = models.progress?.is_downloading ? `Downloading Stable Diffusion models${pct != null ? ` (${Math.round(pct)}%)` : ''}…` : 'Stable Diffusion models are not downloaded on this server yet (about 20 GB of VRAM needed to run).';
+                    setup.textContent = 'Download models';
+                    setup.dataset.step = 'download';
+                } else {
+                    sdStatus.textContent = 'Models ready. Load StreamDiffusionV2 to start.';
+                    setup.textContent = 'Load Stable Diffusion';
+                    setup.dataset.step = 'load';
+                }
+            } catch (err) {
+                sdStatus.textContent = err.message;
+            }
+        }
+
+        q('sd-setup').onclick = async () => {
+            const setup = q('sd-setup');
+            setup.disabled = true;
+            try {
+                if (setup.dataset.step === 'download') {
+                    await daydream.downloadModels(daydream.STREAM_DIFFUSION).catch(e => { if (!/409/.test(e.message)) throw e; });
+                    for (;;) {
+                        const m = await daydream.modelStatus(daydream.STREAM_DIFFUSION);
+                        if (m.downloaded) break;
+                        const pct = m.progress?.percentage;
+                        sdStatus.textContent = `Downloading Stable Diffusion models${pct != null ? ` (${Math.round(pct)}%)` : ''}…`;
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                }
+                // 9:16 at a size the pipeline handles in real time; plain
+                // video-to-video so the scene keeps its layout.
+                await daydream.loadPipeline([daydream.STREAM_DIFFUSION], { width: 320, height: 576, vace_enabled: false },
+                    (msg) => { sdStatus.textContent = msg; });
+            } catch (err) {
+                toast(err.message);
+            }
+            setup.disabled = false;
+            checkScope();
         };
+
+        q('ai').onclick = () => {
+            aiPanel.hidden = !aiPanel.hidden;
+            if (!aiPanel.hidden) checkScope();
+        };
+        q('ai-hide').onclick = () => { aiPanel.hidden = true; };
+        q('sd-url').onchange = (e) => { daydream.setScopeUrl(e.target.value.trim()); checkScope(); };
+
         async function restartAi() {
-            const prompt = aiPanel.querySelector('input').value.trim() || 'cinematic, vivid colors';
+            const prompt = sdPrompt.value.trim() || ENVIRONMENTS[0][1];
             ai?.session.close();
+            ai = null;
+            if (!camStream) { toast('Camera is not running'); return; }
             try {
-                const session = await daydream.startSession({ input: camStream, prompt });
+                q('sd-go').disabled = true;
+                sdStatus.textContent = 'Connecting the camera to Stable Diffusion…';
+                const session = await daydream.startSession({ input: camStream, prompt, params: { noise_scale: +sdStrength.value } });
                 const v = document.createElement('video');
                 v.muted = true;
                 v.playsInline = true;
                 v.srcObject = await session.output;
                 await v.play().catch(() => {});
                 ai = { session, video: v };
-                aiNote.textContent = 'AI effect live. Change the prompt and press Apply again.';
+                sdStatus.textContent = 'Live. Your environment is being restyled in real time.';
                 q('ai').classList.add('on');
+                q('sd-go').textContent = 'Stop';
             } catch (err) {
-                ai = null;
-                aiNote.textContent = err.message;
+                sdStatus.textContent = err.message;
                 q('ai').classList.remove('on');
             }
+            q('sd-go').disabled = false;
         }
-        q('ai-go').onclick = () => {
-            const prompt = aiPanel.querySelector('input').value.trim();
-            if (ai && prompt && ai.session.setPrompt(prompt)) { aiNote.textContent = 'Prompt updated.'; return; }
+        function stopAi() {
+            ai?.session.close();
+            ai = null;
+            q('ai').classList.remove('on');
+            q('sd-go').textContent = 'Go live';
+            sdStatus.textContent = 'Stopped. The camera is back to normal.';
+        }
+        function applyPrompt() {
+            const prompt = sdPrompt.value.trim();
+            if (ai && prompt) ai.session.setPrompt(prompt, 4);
+        }
+        sdPrompt.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyPrompt(); });
+        sdStrength.oninput = () => { strengthLabel(); ai?.session.setParams({ noise_scale: +sdStrength.value }); };
+        q('sd-go').onclick = () => {
+            if (ai) { stopAi(); return; }
+            if (!sdReady) { toast('Set up Stable Diffusion on Scope first'); return; }
             restartAi();
         };
 
